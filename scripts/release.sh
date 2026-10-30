@@ -203,14 +203,21 @@ else
   {
     printf '### 安装\n\n'
     printf '1. 下载 `FunFan-%s.dmg`，双击打开\n' "$VERSION"
-    printf '2. 把 FunFan 拖进「应用程序」\n'
-    printf '3. 首次启动：菜单栏出现风扇图标即完成，不需要安装包\n\n'
+    printf '2. 把 FunFan 拖进「应用程序」，再卸载镜像（**别在 DMG 里直接运行**，那样会报「已损坏」）\n'
+    if [ "$NOTARIZED" -eq 0 ]; then
+      printf '3. 双击 FunFan：macOS 会拦一次「Apple 无法验证」\n'
+      printf '4. 点「完成」（**不要**点「移到废纸篓」），然后 **系统设置 → 隐私与安全性 → 安全性 → 仍要打开**，用 Touch ID 或密码确认\n\n'
+    else
+      printf '3. 双击 FunFan：菜单栏出现风扇图标即完成，不需要安装包\n\n'
+    fi
     printf '> 控制风扇需要安装一次后台组件：\n'
     printf '> 菜单栏图标 → 面板底部「一键启用」→ 输入一次系统密码。\n'
     printf '> 组件只在你操作时写风扇，FunFan 退出/睡眠/合盖都会立刻交还系统。\n\n'
     if [ "$NOTARIZED" -eq 0 ]; then
       printf '### ⚠️ 这个包没有经过公证\n\n'
-      printf '首次启动时 macOS 可能拦一次「无法验证开发者」。若被拦，执行：\n\n'
+      printf '项目没有购买 Apple Developer Program（$99/年），产物是 adhoc 签名，所以 macOS 会拦一次。'
+      printf '按上面第 3–4 步放行一次即可长期使用；**每次升级都要重复**，因为下载会重新带上隔离属性。\n\n'
+      printf '找不到「仍要打开」按钮（它只在尝试打开后约 1 小时内出现），或者你更习惯打命令：\n\n'
       printf '```bash\n'
       printf 'xattr -dr com.apple.quarantine /Applications/FunFan.app\n'
       printf '```\n\n'

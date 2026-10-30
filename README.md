@@ -16,9 +16,55 @@ macOS 菜单栏风扇控制工具，面向 **Apple Silicon**。零第三方依�
 | 租约看门狗 | GUI 经 XPC 让 root helper 持权，10 s 租约 + 1 s 看门狗；GUI 崩溃 / 退出 / 合盖，风扇自动回到系统控制 |
 | 一键诊断 | 一条命令拿到可贴进 issue 的 Markdown 报告：机型、芯片、系统、SMC 键数、温度键可读率与不可读清单（含类型）、风扇区间与模式键、helper 状态与日志尾 |
 
-## 快速开始
+## 安装（下载现成的包）
 
-需要 macOS 13+ 与 Xcode 命令行工具。
+从 [Releases](https://github.com/lovexiaov/funfan/releases) 下载 `FunFan-<版本>.dmg`。
+
+> **这个包没有 Apple 签名证书，也没有经过公证。** FunFan 是个人项目，没有加入 Apple Developer Program（$99/年），产物是 adhoc 签名，macOS 会拦它一次，需要你手动放行。功能完全不受影响，代价只是首次启动多两步。信不过就往下看「从源码构建」，自己编出来的包不会有这道拦截。
+
+**1. 校验（可选，但建议）**
+
+三个附件都下载到同一个目录（通常是「下载」），在终端执行：
+
+```bash
+cd ~/Downloads && shasum -a 256 -c SHA256SUMS.txt
+```
+
+**2. 拖进「应用程序」**
+
+双击 DMG，把 FunFan 拖到「应用程序」。**不要在 DMG 里直接运行**——从挂载的镜像里启动会走 App Translocation（随机只读路径），表现为弹「已损坏，无法打开」，而且后台组件会装不上。
+
+**3. 放行一次**
+
+双击 FunFan，会弹「Apple 无法验证「FunFan」是否包含恶意软件」。点**完成**（不要点「移到废纸篓」），然后：
+
+```
+系统设置 → 隐私与安全性 → 向下滚到「安全性」
+→ 看到「FunFan 已被阻止以保护你的 Mac」→ 点「仍要打开」→ Touch ID 或密码确认
+```
+
+两个细节容易让人卡住：
+
+- 「仍要打开」按钮只在**尝试打开后约 1 小时内**出现。窗口关了或者过了一小时，重新双击一次 App 让它再被拦一遍，按钮才会回来。
+- macOS 15 起**右键 → 打开**这条老捷径已被 Apple 移除，网上大量教程还在教它，现在按了没有用。
+
+不想走设置界面也可以直接清掉隔离属性（等价）：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/FunFan.app
+```
+
+放行一次即长期有效。**升级到新版本后要再做一次**——每次下载都会重新带上隔离属性。
+
+**4. 启用风扇控制**
+
+菜单栏出现风扇图标 → 点开 → 面板底部「一键启用」→ 输入一次系统密码。之后升级 App 不用再授权，因为装的是一份独立的后台组件，不随 App 重装。
+
+> 只看温度不装这个组件也能用。那份权限**只**用来写风扇转速。
+
+## 从源码构建
+
+需要 macOS 13+ 与 Xcode 命令行工具。自己编出来的包没有隔离属性，双击即开。
 
 ```bash
 git clone git@github.com:lovexiaov/funfan.git
@@ -118,9 +164,13 @@ dist/FunFan.app/Contents/MacOS/FunFan --helper-install    # 需要授权时会�
 
 每一行都会同时写到 `~/Library/Application Support/FunFan/helper-cli.log`——用户报障时直接贴这一段，比「装不上」三个字有用得多。
 
-签名身份的来源顺序：`--identity` 参数 → `FUNFAN_SIGN_IDENTITY` 环境变量 → 自动找 `Developer ID Application` → 回退 adhoc。**adhoc 签名进不了 Gatekeeper，也无法公证**，只够本机调试与开发登录项；要出可分发的包必须用 Developer ID。
+签名身份的来源顺序：`--identity` 参数 → `FUNFAN_SIGN_IDENTITY` 环境变量 → 自动找 `Developer ID Application` → 回退 adhoc。**adhoc 签名进不了 Gatekeeper，也无法公证**，只够本机调试与开发登录项。
 
-### 签名与公证
+本项目**不打算购买 Developer ID 证书**，所以对外分发就是上「安装」一节描述的形态：adhoc 签名 + 用户手动放行一次。签名与公证的完整链路保留在下面，哪天有证书了直接可用，不需要改代码。
+
+### 签名与公证（可选的付费路径）
+
+> 没有证书也能发布，走的是 `--allow-unsigned` 内测包。这一节是把「万一以后买了证书」的路留住。
 
 ```bash
 make notary-check    # 体检：证书 / 公证凭据 / 硬运行时 / 调试权限，缺什么说什么
@@ -148,14 +198,18 @@ xcrun notarytool store-credentials funfan-notary \
 
 ### 发到 GitHub Release
 
+本项目**没有 Developer ID 证书**，所以对外发的就是未公证内测包：
+
 ```bash
-make publish-dry     # 演练：单测 → 打包 → 打印将执行的 gh 命令，不建 release
-make publish         # 真发：单测 → 签名/公证 → DMG + ZIP + SHA256SUMS → gh release
+make publish-dry         # 演练：单测 → 打包 → 打印将执行的 gh 命令，不建 release
+make publish-unsigned    # 真发：单测 → 打包 → DMG + ZIP + SHA256SUMS → 草稿 release
 ```
+
+`make publish`（不带 `--allow-unsigned`）走的是签名 + 公证的正式链路，没有证书时会**直接退出 2 并告诉你缺什么**——这是刻意的，免得哪天手滑把一个别人装不上的包发出去。
 
 版本号取自 `VERSION`，tag 为 `v<版本>`；默认建**草稿**，在网页上核对完附件再点 Publish（`--publish` 直接公开）。附件三件套分别是给人下载的 DMG、给自动更新器的 zip、给校验用的 `SHA256SUMS.txt`。
 
-发布前会挡掉「工作区不干净 / 与远端不同步 / tag 已存在 / 没有 Developer ID」这几种情况——adhoc 包发出去别人装不上。要发内测包用 `--allow-unsigned`，release notes 里会自动带上解除隔离属性的命令。详见 [docs/RELEASE.md](docs/RELEASE.md)。
+未公证的包，release notes 里会自动插入解除隔离属性的命令，内容是「安装」一节的简版——用户从 Release 页面点进来就能看到该怎么做，不必回头翻 README。详见 [docs/RELEASE.md](docs/RELEASE.md)。
 
 ## 代码结构
 
@@ -214,9 +268,11 @@ M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27�
 
 曲线策略已在真机跑通端到端：接管后 `manualFixed`、目标随温度单调跟随（2116→2333）、实际转速误差 0–3 RPM、`kill -9` 后 8 s 由租约看门狗返还 `automatic`。规则策略的写入链路与曲线共用同一套下发路径。
 
-M6（打包加固）已落地：`.app` 打包、Developer ID 签名 + 公证 + 装订脚本、helper 一次授权（`SMAppService`）、第三方接管检测与 `doctor` 自检。**本机没有 Developer ID 证书**，所以公证成功路径与打包后的 helper 注册还差一次真机复验（见 `tasks/todo.md` M6 的 Verify 记录）。
+M6（打包加固）已落地：`.app` 打包、Developer ID 签名 + 公证 + 装订脚本、helper 一次授权（`SMAppService`）、第三方接管检测与 `doctor` 自检。公证链路只验到失败路径与提交前预检；打包后的 helper 注册还差一次真机复验（见 `tasks/todo.md` M6 的 Verify 记录）。
 
-未完成：T16b 端到端合盖验证（需笔记本机型）、M6 的证书侧复验。
+**分发形态：未签名、未公证。** 已决定不购买 Apple Developer Program 会员（$99/年），对外发的就是 adhoc 签名的内测包，用户按「安装」一节手动放行一次。签名 + 公证的脚本留在仓库里，将来有证书可以直接启用，不需要改代码。这个选择的代价很具体：每个下载的人多两步点击，而且每次升级都要重复。
+
+未完成：T16b 端到端合盖验证（需笔记本机型）。
 
 ## 许可
 

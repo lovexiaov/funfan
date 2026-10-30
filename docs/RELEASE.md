@@ -1,12 +1,16 @@
 # 发布手册（FunFan）
 
 > 目标读者：要打一个能发给别人的包的自己。
-> 现状：脚本齐全，但**公证成功路径尚未在本机验证**（开发机没有 Developer ID 证书）。
+> 现状：**已决定不购买 Developer ID 证书**，对外发未公证内测包（`make publish-unsigned`）。
+> 签名 + 公证的链路完整保留，只是长期不启用；有证书时按 `## 0` 准备、用 `make publish`。
 > 第一次真正出包时，请把本文当成清单逐条打勾，并把实际输出补回 `tasks/todo.md`。
 
 ---
 
 ## 0. 一次性准备
+
+> **当前不走这条路。** 下面的证书与凭据都需要付费会员（$99/年），项目已决定不买，
+> 日常发布用 `make publish-unsigned` 直接跳到 `## 2`。这一节保留给「哪天买了证书」。
 
 | 需要什么 | 怎么拿到 | 验证命令 |
 |---|---|---|
@@ -47,8 +51,9 @@ make notarize      # 签名 → DMG → 公证 → 装订 → Gatekeeper 验收
 ## 2. 发 GitHub Release
 
 ```bash
-make publish-dry        # 演练：单测 → 打包 → 打印将执行的 gh 命令，不创建 release
-make publish            # 真发：单测 → 签名/公证 → DMG + ZIP → 建「草稿」release
+make publish-dry         # 演练：单测 → 打包 → 打印将执行的 gh 命令，不创建 release
+make publish-unsigned    # 真发（当前默认路径）：未公证内测包
+make publish             # 真发（需证书）：单测 → 签名/公证 → DMG + ZIP → 建草稿
 ```
 
 脚本是 `scripts/release.sh`，版本号取自 `VERSION`，tag 为 `v<版本>`。
@@ -62,7 +67,7 @@ make publish            # 真发：单测 → 签名/公证 → DMG + ZIP → �
 | 本地或远端已有 `v<版本>` | 重发要走 `gh release upload --clobber`，不该静默覆盖已发布的产物 |
 | 没有 Developer ID 证书 / 公证凭据 | adhoc 包在别人机器上会被 Gatekeeper 直接拒，发出去等于废包 |
 
-`--allow-unsigned` 可以绕过最后一条，生成的是**内测包**：release notes 里会自动插入 `xattr -dr com.apple.quarantine` 的解除办法。
+`--allow-unsigned` 可以绕过最后一条，生成的是**内测包**：release notes 里会自动插入 `xattr -dr com.apple.quarantine` 的解除办法。`make publish-unsigned` 就是这条命令——当前项目一直用这个。
 
 **默认建草稿**（`--draft`），要在网页上核对附件和说明之后点 Publish。理由：Release 一旦公开，下载链接、release 页面和各类镜像立刻可见，撤回也会留痕，而这中间没有第二次机会给你换产物。想一步到位用 `--publish`。
 
@@ -86,7 +91,20 @@ Release notes 由「上一个 tag 到 HEAD」的提交标题生成，外加固�
 
 在**另一台**（或至少把 `dist/` 清过、Gatekeeper 有真实上下文的）机器上：
 
-- [ ] 双击 DMG 挂载，拖进「应用程序」，首次打开**不出现**「无法验证开发者」；
+未公证包（当前形态）要特别确认这条链路真的走得通——这是唯一挡在用户面前的东西：
+
+- [ ] 双击 DMG 挂载，拖进「应用程序」；
+- [ ] 双击 FunFan **被拦**（预期），提示是「Apple 无法验证」而不是「已损坏」；点「完成」不点「移到废纸篓」；
+- [ ] 系统设置 → 隐私与安全性 → 安全性：出现「"FunFan" 已被阻止」+「仍要打开」，点了之后 Touch ID/密码确认，App 正常启动；
+- [ ] 上一步完成后，**关掉再双击**能直接开，不再拦；
+- [ ] 装完 DMG 就卸载，别从挂载的镜像里运行（否则 App Translocation 会让后台组件装不上）；
+
+已公证包额外确认：
+
+- [ ] 首次打开**不出现**「无法验证开发者」。
+
+两者都要过：
+
 - [ ] 菜单栏出现风扇图标，无 Dock 图标、无 ⌘Tab 项；
 - [ ] 温度与风扇转速有真实读数（不是 `—`）；
 - [ ] 设置 → 风扇控制组件 → 安装 → 系统弹**一次**授权 → 状态变「已安装」；
@@ -101,6 +119,8 @@ Release notes 由「上一个 tag 到 HEAD」的提交标题生成，外加固�
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
+| 用户反馈「已损坏，无法打开」（不是「无法验证」） | 从挂载的 DMG 里直接运行，走了 App Translocation 的随机只读路径 | 先拖进 `/Applications`，卸载镜像，再启动；仍不行则 `xattr -dr com.apple.quarantine /Applications/FunFan.app` |
+| 系统设置里找不到「仍要打开」按钮 | 该按钮只在尝试打开后约 1 小时内出现 | 重新双击一次 App 让它再被拦，再回设置页 |
 | `spctl` 仍 rejected | 没装订或公证没过 | `xcrun stapler validate <产物>`；重跑 `make notarize` |
 | 公证 `Invalid`，日志提到 `not signed` | 包内有未签名的可执行文件 | 检查 `.app/Contents/MacOS/` 下每个文件都已签名（脚本已按 helper→App 顺序签） |
 | 公证 `Invalid`，日志提到 `hardened runtime` | 少了 `--options runtime` | `make notary-check` 会直接指出 |

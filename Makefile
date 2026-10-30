@@ -5,7 +5,7 @@
 
 SWIFT_FLAGS := --disable-sandbox
 
-.PHONY: help build release test run run-app app sign-info notarize notary-check dmg publish publish-dry doctor diagnose raw status spin install-helper uninstall-helper clean
+.PHONY: help build release test run run-app app sign-info notarize notary-check dmg publish publish-unsigned publish-dry doctor diagnose raw status spin install-helper uninstall-helper clean
 
 help:
 	@echo "FunFan 开发命令："
@@ -19,7 +19,8 @@ help:
 	@echo "  make notary-check       体检：证书 / 公证凭据 / 硬运行时，缺什么说什么"
 	@echo "  make notarize           Developer ID 签名 + 公证 + 装订 + Gatekeeper 验收"
 	@echo "  make dmg                打 dist/FunFan-<版本>.dmg（有证书就顺带签）"
-	@echo "  make publish            发 GitHub Release（草稿）：单测 → 签名/公证 → DMG+ZIP → gh release"
+	@echo "  make publish-unsigned   发 GitHub Release（草稿，未公证内测包）—— 当前默认路径"
+	@echo "  make publish            发 GitHub Release（草稿，需 Developer ID 证书，没有会拒绝）"
 	@echo "  make publish-dry        演练发布：跑到打包为止，只打印 gh 命令"
 	@echo "  make doctor             硬件诊断（只读）"
 	@echo "  make diagnose           系统信息采集：能力逐项实测 + 排查建议"
@@ -61,6 +62,11 @@ dmg: app
 
 publish:
 	./scripts/release.sh
+
+# 当前主力路径：没有 Developer ID 证书，发的是未公证内测包。
+# release notes 会自动插入解除隔离属性的说明，README「安装」一节讲的是同一件事。
+publish-unsigned:
+	./scripts/release.sh --allow-unsigned
 
 publish-dry:
 	./scripts/release.sh --dry-run

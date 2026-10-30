@@ -191,6 +191,11 @@
 
 > 进行中（2026-10-31）。本机**没有 Developer ID 证书**，所以「签名 + 公证 + 装订 + Gatekeeper 验收」
 > 这条链只完成了「失败路径 + 提交前预检」的验证，成功路径要装好证书的机器复验。
+>
+> **2026-10-31 决定：不购买 Apple Developer Program 会员（$99/年），对外发未公证内测包。**
+> 因此 T17b 的公证成功路径不再列为待办，改为「保留但长期不启用」。
+> 分发方式写进 README「安装」一节（拖进 /Applications → 系统设置「仍要打开」→ 一次性放行），
+> 发布命令是 `make publish-unsigned`。代价：用户首次启动多两步、每次升级重复一遍。
 
 - [x] T17a: 把 SPM 产物打成可运行的 .app
   - Acceptance: 产出 dist/FunFan.app（Info.plist 带 LSUIElement、bundle id、版本；helper 与 daemon plist 内嵌）；可启动、无 Dock 图标。
