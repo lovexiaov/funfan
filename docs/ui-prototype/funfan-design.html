@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FunFan · UI Design Draft (v1)</title>
+<style>
+  /* ============================================================
+     FunFan Design Tokens (Dark, macOS menu-bar utility vibe)
+     Maps to SwiftUI @Environment values in handoff doc.
+     ============================================================ */
+  :root {
+    --bg-menu: #0c0c0e;
+    --bg-panel: #1c1c1e;
+    --bg-elevated: #2a2a2e;
+    --bg-inset: #141416;
+    --bg-hover: rgba(255,255,255,0.06);
+
+    --text-primary: #f5f5f7;
+    --text-secondary: #a1a1a6;
+    --text-tertiary: #6e6e73;
+
+    --separator: rgba(255,255,255,0.10);
+    --hairline: rgba(255,255,255,0.08);
+
+    --accent: #46c8ff;          /* cool blue — "fan/cooling" */
+    --accent-soft: rgba(70,200,255,0.16);
+    --accent-strong: #1aa3e0;
+
+    --green: #30d158;            /* temp OK */
+    --amber: #ff9f0a;            /* temp warm */
+    --red:   #ff453a;            /* temp hot */
+    --gray-idle: #8e8e93;
+
+    --radius-lg: 14px;
+    --radius-md: 10px;
+    --radius-sm: 7px;
+
+    --font: -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, "PingFang SC", sans-serif;
+    --font-num: "SF Pro Display", -apple-system, system-ui, sans-serif;
+
+    --space-1: 4px; --space-2: 8px; --space-3: 12px;
+    --space-4: 16px; --space-5: 20px; --space-6: 24px;
+
+    --shadow-pop: 0 12px 40px rgba(0,0,0,0.55);
+    --shadow-card: 0 1px 2px rgba(0,0,0,0.4);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font);
+    background:
+      radial-gradient(1200px 600px at 70% -10%, #1b2733 0%, transparent 60%),
+      radial-gradient(900px 500px at 0% 110%, #241a2e 0%, transparent 55%),
+      #08080a;
+    color: var(--text-primary);
+    display: flex; flex-direction: column; align-items: center;
+    padding: 28px 16px 48px; gap: var(--space-5);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Title ---------- */
+  .titlebar { text-align: center; }
+  .titlebar h1 { font-size: 22px; font-weight: 600; letter-spacing: .2px; }
+  .titlebar p { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+  .tag {
+    display: inline-block; font-size: 11px; color: var(--accent);
+    border: 1px solid var(--accent-soft); background: var(--accent-soft);
+    border-radius: 999px; padding: 2px 10px; margin-top: 8px;
+  }
+
+  /* ---------- Menu bar strip (context) ---------- */
+  .menubar {
+    width: 100%; max-width: 980px; height: 26px; border-radius: 8px 8px 0 0;
+    background: rgba(20,20,22,0.92); backdrop-filter: blur(20px);
+    border: 1px solid var(--hairline); border-bottom: none;
+    display: flex; align-items: center; padding: 0 12px; gap: 16px;
+    font-size: 12px; color: #d0d0d5;
+  }
+  .menubar .logo { color: var(--accent); font-weight: 600; }
+  .menubar .right { margin-left: auto; display: flex; gap: 14px; color: var(--text-secondary); }
+  .menubar .fan-chip { display: inline-flex; align-items: center; gap: 5px; }
+  .menubar svg { width: 13px; height: 13px; }
+
+  /* ---------- Window frame ---------- */
+  .window {
+    width: 100%; max-width: 980px; background: var(--bg-panel);
+    border: 1px solid var(--hairline); border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    box-shadow: var(--shadow-pop); overflow: hidden;
+    display: grid; grid-template-columns: 200px 1fr;
+  }
+  .sidebar {
+    background: var(--bg-inset); border-right: 1px solid var(--separator);
+    padding: 14px 10px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 11px;
+    border-radius: var(--radius-sm); font-size: 13px; color: var(--text-secondary);
+    cursor: pointer; user-select: none; transition: background .15s;
+  }
+  .nav-item svg { width: 16px; height: 16px; opacity: .85; }
+  .nav-item:hover { background: var(--bg-hover); }
+  .nav-item.active { background: var(--accent-soft); color: var(--text-primary); }
+  .nav-item.active svg { color: var(--accent); opacity: 1; }
+  .sidebar .spacer { flex: 1; }
+  .sidebar .brand { font-size: 11px; color: var(--text-tertiary); padding: 8px 11px; }
+
+  .content { padding: 20px; min-height: 520px; }
+  .screen { display: none; }
+  .screen.active { display: block; animation: fade .2s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .screen h2 { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+  .screen .sub { font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; }
+
+  /* ---------- Cards ---------- */
+  .card {
+    background: var(--bg-elevated); border: 1px solid var(--hairline);
+    border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 14px;
+    box-shadow: var(--shadow-card);
+  }
+  .card-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--text-tertiary); margin-bottom: 10px; font-weight: 600;
+  }
+
+  /* ---------- Fan hero ---------- */
+  .fan-hero { display: flex; align-items: center; gap: 16px; }
+  .fan-ring { position: relative; width: 72px; height: 72px; flex: none; }
+  .fan-ring svg { width: 72px; height: 72px; }
+  .fan-ring .rpm-mini {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .fan-ring .rpm-mini b { font-size: 16px; font-family: var(--font-num); font-weight: 600; }
+  .fan-ring .rpm-mini span { font-size: 9px; color: var(--text-tertiary); }
+  .fan-meta { flex: 1; }
+  .fan-meta .row { display: flex; justify-content: space-between; font-size: 12px; margin: 3px 0; }
+  .fan-meta .row span:first-child { color: var(--text-secondary); }
+  .fan-meta .row b { font-family: var(--font-num); font-weight: 600; }
+  .bar { height: 6px; border-radius: 3px; background: var(--bg-inset); overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #7ee0ff); border-radius: 3px; }
+
+  /* ---------- Temp chips ---------- */
+  .chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .chip {
+    background: var(--bg-inset); border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm); padding: 10px; text-align: center;
+  }
+  .chip .label { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .4px; }
+  .chip .val { font-size: 18px; font-family: var(--font-num); font-weight: 600; margin-top: 4px; }
+  .chip .val small { font-size: 11px; font-weight: 400; color: var(--text-tertiary); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: middle; }
+
+  /* ---------- Core breakdown (per-cluster) ---------- */
+  .expand-btn {
+    margin-top: 12px; font-size: 11px; color: var(--accent); background: none;
+    border: none; cursor: pointer; font-family: var(--font); padding: 0;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .expand-btn svg { width: 12px; height: 12px; transition: transform .2s; }
+  .expand-btn.open svg { transform: rotate(90deg); }
+  .core-list { margin-top: 10px; display: none; }
+  .core-list.open { display: block; animation: fade .2s ease; }
+  .core-group { background: var(--bg-inset); border: 1px solid var(--hairline); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px; }
+  .core-group .g-title { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  .core-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 3px 0; }
+  .core-row .name { color: var(--text-secondary); }
+  .core-row .t { font-family: var(--font-num); font-weight: 600; }
+
+  /* ---------- Battery ---------- */
+  .batt { display: flex; align-items: center; gap: 14px; }
+  .batt-icon { width: 46px; height: 24px; border: 2px solid var(--text-secondary); border-radius: 5px; position: relative; flex: none; }
+  .batt-icon::after { content:""; position:absolute; right:-5px; top:7px; width:3px; height:10px; background: var(--text-secondary); border-radius:0 2px 2px 0; }
+  .batt-icon i { position:absolute; left:2px; top:2px; bottom:2px; width:78%; background: var(--green); border-radius:2px; }
+  .batt-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; flex: 1; }
+  .batt-stats div { font-size: 12px; color: var(--text-secondary); }
+  .batt-stats b { display: block; font-size: 15px; color: var(--text-primary); font-family: var(--font-num); font-weight: 600; }
+
+  /* ---------- Strategy selector ---------- */
+  .seg { display: flex; background: var(--bg-inset); border-radius: var(--radius-sm); padding: 3px; gap: 3px; }
+  .seg button {
+    flex: 1; border: none; background: transparent; color: var(--text-secondary);
+    font-size: 12px; font-family: var(--font); padding: 7px 0; border-radius: 5px; cursor: pointer; transition: .15s;
+  }
+  .seg button.on { background: var(--accent-soft); color: var(--text-primary); }
+
+  /* ---------- Curve editor ---------- */
+  .chart-wrap { background: var(--bg-inset); border: 1px solid var(--hairline); border-radius: var(--radius-md); padding: 10px; }
+  svg.chart { width: 100%; height: 240px; display: block; }
+  .presets { display: flex; gap: 8px; margin-top: 12px; }
+  .presets button {
+    flex:1; border:1px solid var(--hairline); background: var(--bg-elevated); color: var(--text-primary);
+    font-size:12px; font-family: var(--font); padding: 8px; border-radius: var(--radius-sm); cursor:pointer;
+  }
+  .presets button:hover { border-color: var(--accent); }
+  .legend { font-size: 11px; color: var(--text-tertiary); margin-top: 8px; display: flex; gap: 14px; }
+  .legend span i { width: 18px; height: 3px; display: inline-block; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+
+  /* ---------- Rules ---------- */
+  .rule {
+    display: flex; align-items: center; gap: 12px; background: var(--bg-elevated);
+    border: 1px solid var(--hairline); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 10px;
+  }
+  .rule .txt { flex: 1; font-size: 13px; line-height: 1.5; }
+  .rule .txt b { color: var(--accent); font-family: var(--font-num); }
+  .switch { width: 42px; height: 24px; border-radius: 12px; background: var(--accent); position: relative; cursor: pointer; flex: none; transition: .2s; }
+  .switch.off { background: var(--bg-inset); }
+  .switch i { position: absolute; top: 2px; left: 20px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
+  .switch.off i { left: 2px; }
+  .add-rule { display: grid; grid-template-columns: 1fr 1fr 90px 1fr 90px; gap: 8px; align-items: center; }
+  select, input {
+    background: var(--bg-inset); border: 1px solid var(--hairline); color: var(--text-primary);
+    border-radius: var(--radius-sm); padding: 8px 10px; font-size: 12px; font-family: var(--font); width: 100%;
+  }
+  .btn-add {
+    background: var(--accent); color: #06121a; border: none; border-radius: var(--radius-sm);
+    padding: 9px; font-size: 12px; font-weight: 600; font-family: var(--font); cursor: pointer;
+  }
+  .hint { font-size: 11px; color: var(--text-tertiary); margin-top: 8px; }
+
+  /* ---------- Settings ---------- */
+  .set-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--separator); }
+  .set-row:last-child { border-bottom: none; }
+  .set-row .meta b { font-size: 13px; font-weight: 500; }
+  .set-row .meta p { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .checks label { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 7px; cursor: pointer; }
+  .disclaimer { font-size: 11px; color: var(--text-tertiary); line-height: 1.6; background: var(--bg-inset); border: 1px solid var(--hairline); border-radius: var(--radius-sm); padding: 12px; margin-top: 6px; }
+  .btn-doctor { background: var(--bg-elevated); border: 1px solid var(--hairline); color: var(--text-primary); border-radius: var(--radius-sm); padding: 8px 14px; font-size: 12px; font-family: var(--font); cursor: pointer; }
+  .btn-doctor:hover { border-color: var(--accent); }
+
+  .footer-note { font-size: 11px; color: var(--text-tertiary); text-align: center; max-width: 760px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+  <div class="titlebar">
+    <h1>FunFan · 设计稿 v1</h1>
+    <p>Apple Silicon macOS 轻量风扇控制 · 菜单栏常驻 · 温度/电量监控 + 规则自动调速</p>
+    <div class="tag">UI Design Draft — 仅设计阶段，非最终实现</div>
+  </div>
+
+  <!-- macOS menu bar context -->
+  <div class="menubar">
+    <span class="logo">🌀 FunFan</span>
+    <span class="fan-chip">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 12c0-4 3-7 7-7-1 5-3 8-7 9zM12 12c-4 0-7 3-7 7 5-1 8-3 9-7zM12 12c0 4-3 7-7 7 1-5 3-8 7-9zM12 12c4 0 7-3 7-7-5 1-8 3-9 7z"/></svg>
+      2200 rpm
+    </span>
+    <span class="fan-chip">CPU 72°均</span>
+    <span class="fan-chip">🔋 87%</span>
+    <div class="right"><span>Mon 21:50</span><span>🔍</span><span>⚙</span></div>
+  </div>
+
+  <!-- Window -->
+  <div class="window">
+    <aside class="sidebar">
+      <div class="nav-item active" data-screen="status">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/></svg>
+        状态
+      </div>
+      <div class="nav-item" data-screen="curve">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 18c3-9 7-9 8 0s5 9 8 0"/></svg>
+        曲线
+      </div>
+      <div class="nav-item" data-screen="rules">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 7h14M5 12h14M5 17h14"/></svg>
+        规则
+      </div>
+      <div class="nav-item" data-screen="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>
+        设置
+      </div>
+      <div class="spacer"></div>
+      <div class="brand">FunFan 1.0 · Apple Silicon</div>
+    </aside>
+
+    <main class="content">
+
+      <!-- ============ STATUS ============ -->
+      <section class="screen active" id="screen-status">
+        <h2>实时监控</h2>
+        <p class="sub">菜单栏 Popover 主界面 · 所有监控均免 root 读取</p>
+
+        <div class="card">
+          <div class="card-title">风扇</div>
+          <div class="fan-hero">
+            <div class="fan-ring">
+              <svg viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="16" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="3"/>
+                <circle cx="18" cy="18" r="16" fill="none" stroke="var(--accent)" stroke-width="3"
+                        stroke-dasharray="100" stroke-dashoffset="35" stroke-linecap="round" transform="rotate(-90 18 18)"/>
+              </svg>
+              <div class="rpm-mini"><b>2200</b><span>RPM</span></div>
+            </div>
+            <div class="fan-meta">
+              <div class="row"><span>目标转速</span><b>3000 RPM</b></div>
+              <div class="row"><span>系统范围</span><b>1200 – 6200</b></div>
+              <div class="row"><span>控制策略</span><b style="color:var(--accent)">规则 · 自动</b></div>
+              <div class="bar"><i style="width:48%"></i></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">硬件温度（均温）</div>
+          <div class="chips">
+            <div class="chip"><div class="label">CPU 均温</div><div class="val" style="color:var(--amber)"><span class="dot" style="background:var(--amber)"></span>72<small>°C</small></div></div>
+            <div class="chip"><div class="label">GPU 均温</div><div class="val" style="color:var(--green)"><span class="dot" style="background:var(--green)"></span>58<small>°C</small></div></div>
+            <div class="chip"><div class="label">SSD</div><div class="val" style="color:var(--green)"><span class="dot" style="background:var(--green)"></span>47<small>°C</small></div></div>
+            <div class="chip"><div class="label">环境</div><div class="val" style="color:var(--green)"><span class="dot" style="background:var(--green)"></span>31<small>°C</small></div></div>
+          </div>
+          <button class="expand-btn" id="coreToggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg><span class="lbl">展开各核心温度</span></button>
+          <div class="core-list" id="coreList">
+            <div class="core-group">
+              <div class="g-title">CPU · P 性能核</div>
+              <div class="core-row"><span class="name">P-Core 0</span><span class="t" style="color:var(--amber)">74°</span></div>
+              <div class="core-row"><span class="name">P-Core 1</span><span class="t" style="color:var(--amber)">73°</span></div>
+              <div class="core-row"><span class="name">P-Core 2</span><span class="t" style="color:var(--green)">71°</span></div>
+              <div class="core-row"><span class="name">P-Core 3</span><span class="t" style="color:var(--green)">70°</span></div>
+            </div>
+            <div class="core-group">
+              <div class="g-title">CPU · E 能效核</div>
+              <div class="core-row"><span class="name">E-Core 0</span><span class="t" style="color:var(--green)">61°</span></div>
+              <div class="core-row"><span class="name">E-Core 1</span><span class="t" style="color:var(--green)">60°</span></div>
+            </div>
+            <div class="core-group">
+              <div class="g-title">GPU · 计算簇</div>
+              <div class="core-row"><span class="name">GPU Cluster 0</span><span class="t" style="color:var(--green)">59°</span></div>
+              <div class="core-row"><span class="name">GPU Cluster 1</span><span class="t" style="color:var(--green)">57°</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">电池 / 电量</div>
+          <div class="batt">
+            <div class="batt-icon"><i></i></div>
+            <div class="batt-stats">
+              <div>电量<b>87%</b></div>
+              <div>健康度<b>94%</b></div>
+              <div>循环<b>142</b></div>
+              <div>状态<b style="color:var(--green)">充电 +12.3W</b></div>
+              <div>适配器<b>61W</b></div>
+              <div>温度<b>31°C</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">控制策略</div>
+          <div class="seg" id="strategy">
+            <button data-s="auto">自动</button>
+            <button data-s="fixed">固定</button>
+            <button data-s="curve">曲线</button>
+            <button data-s="rule" class="on">规则</button>
+          </div>
+          <p class="hint">规则策略下：温度越过阈值自动提速，回落至阈值−迟滞后返还系统自动。任何策略均不压低系统安全下限。</p>
+        </div>
+      </section>
+
+      <!-- ============ CURVE ============ -->
+      <section class="screen" id="screen-curve">
+        <h2>温度 → 转速 曲线</h2>
+        <p class="sub">连续映射策略 · 拖拽节点调整（演示交互）</p>
+
+        <div class="card">
+          <div class="chart-wrap">
+            <svg class="chart" viewBox="0 0 600 240" id="curve">
+              <!-- grid -->
+              <g stroke="rgba(255,255,255,0.06)">
+                <line x1="40" y1="20" x2="40" y2="210"/>
+                <line x1="40" y1="210" x2="580" y2="210"/>
+                <line x1="40" y1="20" x2="580" y2="20" stroke-dasharray="3 4"/>
+                <line x1="40" y1="115" x2="580" y2="115" stroke-dasharray="3 4"/>
+              </g>
+              <!-- safety floor -->
+              <line x1="40" y1="170" x2="580" y2="170" stroke="var(--red)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.7"/>
+              <text x="46" y="165" fill="var(--red)" font-size="11">安全下限</text>
+              <!-- area + line -->
+              <path d="M40,205 L160,150 L280,108 L400,70 L520,52 L580,46 L580,210 L40,210 Z" fill="var(--accent-soft)"/>
+              <path d="M40,205 L160,150 L280,108 L400,70 L520,52 L580,46" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>
+              <!-- handles -->
+              <g id="handles" fill="#fff" stroke="var(--accent)" stroke-width="2">
+                <circle cx="40" cy="205" r="6" class="hp" data-x="40"/>
+                <circle cx="160" cy="150" r="6" class="hp" data-x="160"/>
+                <circle cx="280" cy="108" r="6" class="hp" data-x="280"/>
+                <circle cx="400" cy="70" r="6" class="hp" data-x="400"/>
+                <circle cx="520" cy="52" r="6" class="hp" data-x="520"/>
+              </g>
+              <!-- axis labels -->
+              <text x="44" y="228" fill="var(--text-tertiary)" font-size="10">40°C</text>
+              <text x="540" y="228" fill="var(--text-tertiary)" font-size="10">100°C</text>
+              <text x="8" y="24" fill="var(--text-tertiary)" font-size="10">6200</text>
+              <text x="14" y="214" fill="var(--text-tertiary)" font-size="10">1200</text>
+            </svg>
+          </div>
+          <div class="legend">
+            <span><i style="background:var(--accent)"></i>目标转速曲线</span>
+            <span><i style="background:var(--red)"></i>安全下限（不可低于）</span>
+          </div>
+          <div class="presets">
+            <button>静音</button><button>均衡</button><button>性能</button>
+          </div>
+        </div>
+        <p class="hint">曲线输出经 SafetyPolicy 下限 clamp；迟滞与斜率限制见 Spec §4.1 / §5。</p>
+      </section>
+
+      <!-- ============ RULES ============ -->
+      <section class="screen" id="screen-rules">
+        <h2>自动调速规则</h2>
+        <p class="sub">离散温度阈值动作 · 多条触发时取最大 RPM</p>
+
+        <div class="rule">
+          <div class="txt">当 <b>CPU</b> <b>≥ 70°C</b>（迟滞 3°C）→ 设定 <b>3000 RPM</b></div>
+          <div class="switch" data-on="1"><i></i></div>
+        </div>
+        <div class="rule">
+          <div class="txt">当 <b>GPU</b> <b>≥ 80°C</b>（迟滞 4°C）→ 设定 <b>4200 RPM</b></div>
+          <div class="switch on" data-on="1"><i></i></div>
+        </div>
+        <div class="rule">
+          <div class="txt">当 <b>SSD</b> <b>≥ 60°C</b>（迟滞 2°C）→ 设定 <b>2400 RPM</b></div>
+          <div class="switch off" data-on="0"><i></i></div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-title">新增规则</div>
+          <div class="add-rule">
+            <select><option>CPU</option><option>GPU</option><option>SSD</option><option>环境</option></select>
+            <select><option>≥</option><option>></option><option>≤</option></select>
+            <input type="number" value="70" /><span style="font-size:12px;color:var(--text-tertiary)">°C</span>
+            <select><option>设定转速</option><option>设定百分比</option></select>
+            <input type="number" value="3000" /><span style="font-size:12px;color:var(--text-tertiary)">RPM</span>
+          </div>
+          <div style="margin-top:8px"><button class="btn-add">+ 添加规则</button></div>
+          <p class="hint">规则仅在「规则」策略激活时生效；逻辑为纯函数评估（1 Hz），可单测、可重放（Spec §5 / RuleEngine）。</p>
+        </div>
+      </section>
+
+      <!-- ============ SETTINGS ============ -->
+      <section class="screen" id="screen-settings">
+        <h2>设置</h2>
+        <p class="sub">传感器选择 · 自启 · 自检 · 免责</p>
+
+        <div class="card">
+          <div class="card-title">显示传感器</div>
+          <div class="checks">
+            <label><input type="checkbox" checked /> CPU 温度</label>
+            <label><input type="checkbox" checked /> GPU 温度</label>
+            <label><input type="checkbox" checked /> SSD 温度</label>
+            <label><input type="checkbox" /> 环境/内存</label>
+            <label><input type="checkbox" checked /> 电量</label>
+            <label><input type="checkbox" checked /> 风扇转速</label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="set-row">
+            <div class="meta"><b>登录时启动</b><p>随系统自动运行于菜单栏</p></div>
+            <div class="switch on" data-on="1"><i></i></div>
+          </div>
+          <div class="set-row">
+            <div class="meta"><b>退出时返还系统自动</b><p>崩溃/合盖/睡眠亦自动恢复</p></div>
+            <div class="switch on" data-on="1"><i></i></div>
+          </div>
+          <div class="set-row">
+            <div class="meta"><b>运行硬件自检</b><p>doctor：校验 SMC 键名与代系</p></div>
+            <button class="btn-doctor">运行 doctor</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">关于 / 免责</div>
+          <div class="disclaimer">
+            FunFan 通过用户态 IOKit 读取传感器、经特权 helper 调节风扇转速，全程不绕过 macOS 自身热保护。
+            调速仅「提高」系统默认转速，不会将风扇压至系统安全下限以下。使用本软件的风险由用户自行承担；
+            如与其他风扇控制软件并存，FunFan 检测到冲突将拒绝接管。
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <p class="footer-note">
+    设计稿说明：本原型用于评审视觉与信息架构，配色/间距已抽象为 Design Tokens（见落地指南），
+    最终实现为 SwiftUI（macOS 13+），菜单栏 Popover 宽约 320pt，设置/规则为独立窗口。
+    深色为默认主题，亮色主题沿用同套令牌。
+  </p>
+
+<script>
+  // tab switching
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
+      n.classList.add('active');
+      document.getElementById('screen-' + n.dataset.screen).classList.add('active');
+    });
+  });
+  // strategy segmented
+  document.querySelectorAll('#strategy button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#strategy button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+    });
+  });
+  // toggle switches
+  document.querySelectorAll('.switch').forEach(s => {
+    s.addEventListener('click', () => {
+      const on = s.dataset.on === '1';
+      s.dataset.on = on ? '0' : '1';
+      s.classList.toggle('on', !on);
+      s.classList.toggle('off', on);
+    });
+  });
+  // per-core temperature expand
+  const coreToggle = document.getElementById('coreToggle');
+  coreToggle.addEventListener('click', () => {
+    const list = document.getElementById('coreList');
+    const open = list.classList.toggle('open');
+    coreToggle.classList.toggle('open', open);
+    coreToggle.querySelector('.lbl').textContent = open ? '收起各核心温度' : '展开各核心温度';
+  });
+  // curve handle drag (vertical only, cosmetic demo)
+  const svg = document.getElementById('curve');
+  let drag = null;
+  svg.querySelectorAll('.hp').forEach(h => {
+    h.addEventListener('mousedown', e => { drag = h; e.preventDefault(); });
+  });
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const r = svg.getBoundingClientRect();
+    let y = (e.clientY - r.top) / r.height * 240;
+    y = Math.max(20, Math.min(210, y));
+    drag.setAttribute('cy', y.toFixed(0));
+    redraw();
+  });
+  window.addEventListener('mouseup', () => drag = null);
+  function redraw() {
+    const pts = [...svg.querySelectorAll('.hp')].map(h => h.getAttribute('cx') + ',' + h.getAttribute('cy'));
+    const line = svg.querySelector('path[stroke="var(--accent)"]');
+    const area = svg.querySelector('path[fill="var(--accent-soft)"]');
+    line.setAttribute('d', 'M' + pts.join(' L'));
+    area.setAttribute('d', 'M' + pts.join(' L') + ' L580,210 L40,210 Z');
+  }
+</script>
+</body>
+</html>
