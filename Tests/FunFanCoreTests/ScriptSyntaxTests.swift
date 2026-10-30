@@ -70,45 +70,71 @@ final class ScriptSyntaxTests: XCTestCase {
     /// 下一切正常，用户和 CI 的 UTF-8 环境里直接 `unbound variable` 退出。
     /// agent 沙箱恰好是 C locale，本机跑不出这个问题，是 CI 的 macOS 15 runner
     /// 让它现形的（`make-dmg.sh: line 67: DMG\xef: unbound variable`）。
+    ///
+    /// 这道坎在 `.github/workflows/*.yml` 的内联 `run:` 块里一样会踩——之前 array
+    /// 只扫 `scripts/*.sh`，结果推 tag 自动打包在「挂到 Release」步骤 `echo "...$VER（..."`
+    /// 处 `unbound variable` 失败。现在 shell 内联块也要纳入扫描。
+    ///
     /// 修法只有一种：写成 `${DMG}`。这条测试守住「只许花括号」。
     func testVariableNeverGluedToMultibyteChar() throws {
         var offenders: [String] = []
 
         for script in try scripts() {
             let text = try String(contentsOf: script, encoding: .utf8)
-            for (index, line) in text.components(separatedBy: .newlines).enumerated() {
-                let scalars = Array(line.unicodeScalars)
-                var inSingleQuote = false
-                var inDoubleQuote = false
-                var i = 0
-
-                // 单引号里 `$VAR` 是字面量，不参与展开，不能误判
-                while i < scalars.count {
-                    let scalar = scalars[i]
-                    if scalar == "'", !inDoubleQuote { inSingleQuote.toggle(); i += 1; continue }
-                    if scalar == "\"", !inSingleQuote { inDoubleQuote.toggle(); i += 1; continue }
-
-                    guard scalar == "$", !inSingleQuote else { i += 1; continue }
-
-                    var j = i + 1
-                    guard j < scalars.count, Self.isNameStart(scalars[j]) else { i += 1; continue }
-                    while j < scalars.count, Self.isNameChar(scalars[j]) { j += 1 }
-
-                    if j < scalars.count, scalars[j].value > 0x7F {
-                        let name = String(String.UnicodeScalarView(scalars[(i + 1)..<j]))
-                        offenders.append(
-                            "\(script.lastPathComponent):\(index + 1)  $\(name) 后面紧跟「\(scalars[j])」，应写成 ${\(name)}"
-                        )
-                    }
-                    i = j
-                }
-            }
+            offenders += Self.gluedOffenders(in: text, fileName: script.lastPathComponent)
+        }
+        for wf in try workflows() {
+            let text = try String(contentsOf: wf, encoding: .utf8)
+            offenders += Self.gluedOffenders(in: text, fileName: wf.lastPathComponent)
         }
 
         XCTAssertTrue(
             offenders.isEmpty,
             "变量名后紧跟中文会被 bash 3.2 吞掉首字节：\n" + offenders.joined(separator: "\n")
         )
+    }
+
+    /// 逐行扫一段 shell 文本，找出「$名字 后紧跟非 ASCII」的位置。
+    /// 单引号内是字面量不参与展开，不报；`${{ ... }}`（GitHub 表达式）不以
+    /// `$` + 字母开头，自然不会命中。
+    private static func gluedOffenders(in text: String, fileName: String) -> [String] {
+        var offenders: [String] = []
+        for (index, line) in text.components(separatedBy: .newlines).enumerated() {
+            let scalars = Array(line.unicodeScalars)
+            var inSingleQuote = false
+            var i = 0
+            while i < scalars.count {
+                let scalar = scalars[i]
+                if scalar == "'" { inSingleQuote.toggle(); i += 1; continue }
+                guard scalar == "$", !inSingleQuote else { i += 1; continue }
+
+                var j = i + 1
+                guard j < scalars.count, Self.isNameStart(scalars[j]) else { i += 1; continue }
+                while j < scalars.count, Self.isNameChar(scalars[j]) { j += 1 }
+
+                if j < scalars.count, scalars[j].value > 0x7F {
+                    let name = String(String.UnicodeScalarView(scalars[(i + 1)..<j]))
+                    offenders.append(
+                        "\(fileName):\(index + 1)  $\(name) 后面紧跟「\(scalars[j])」，应写成 ${\(name)}"
+                    )
+                }
+                i = j
+            }
+        }
+        return offenders
+    }
+
+    /// 仓库里的 CI 工作流（内联 `run:` 块是 shell，要一起守变量粘字节的坑）。
+    private func workflows() throws -> [URL] {
+        let directory = repoRoot
+            .appendingPathComponent(".github", isDirectory: true)
+            .appendingPathComponent("workflows", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            throw XCTSkip("找不到 .github/workflows/ 目录：\(directory.path)")
+        }
+        let items = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        return items.filter { $0.pathExtension == "yml" || $0.pathExtension == "yaml" }
+                    .sorted { $0.path < $1.path }
     }
 
     private static func isNameStart(_ scalar: Unicode.Scalar) -> Bool {

@@ -71,7 +71,7 @@ jobs:
 
           VER="$(tr -d ' \n' < VERSION)"
           if [ "v$VER" != "$TAG" ]; then
-            echo "::error::VERSION 里是 $VER，tag 却是 $TAG —— 先把 VERSION 改成与 tag 一致再推 tag"
+            echo "::error::VERSION 里是 ${VER}，tag 却是 $TAG —— 先把 VERSION 改成与 tag 一致再推 tag"
             exit 1
           fi
 
@@ -179,7 +179,7 @@ jobs:
               echo "Release $TAG 已有完整附件（本机发布过），跳过上传，只做编译验证。"
               URL="$(gh release view "$TAG" --json url -q .url)"
               {
-                echo "### FunFan $VER（tag \`$TAG\`）"
+                echo "### FunFan ${VER}（tag \`$TAG\`）"
                 echo
                 echo "- 已有 Release：$URL"
                 echo "- 附件来自本机发布，本次 CI 只验证了「能编译、能打包、产物结构正确」，没有覆盖上传"
@@ -201,7 +201,7 @@ jobs:
 
           URL="$(gh release view "$TAG" --json url -q .url)"
           {
-            echo "### FunFan $VER（tag \`$TAG\`）"
+            echo "### FunFan ${VER}（tag \`$TAG\`）"
             echo
             echo "- 产物：DMG / ZIP / SHA256SUMS"
             echo "- 签名：adhoc（未公证，Gatekeeper 会拦一次）"
