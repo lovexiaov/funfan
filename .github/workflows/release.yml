@@ -1,0 +1,223 @@
+name: release
+
+# 自动打包：推一个 tag 上来，CI 负责编译 → 单测 → 组 .app → DMG/ZIP → 校验和 → 挂到 Release。
+#
+# 为什么 CI 只能出 adhoc 包：
+#   项目没有 Apple Developer Program 证书（见 README「签名与公证」）。CI 里没有证书、
+#   没有公证凭据，能做的就是 adhoc 签名——和本机 `make publish-unsigned` 同一种产物，
+#   Gatekeeper 同样会拦一次。哪天买了证书，把证书与 notarytool 凭据塞进 Secrets 后
+#   在下面「打包」一步换成 `bash scripts/notarize.sh` 即可。
+#
+# 为什么默认建草稿：
+#   Release 一旦公开，下载链接立刻可见，撤回也留痕。草稿能先在网页上核对附件大小、
+#   校验和与文案，点一次 Publish 才真正生效。要直接公开用 workflow_dispatch 的 publish 开关。
+#
+# 和本机发布的关系（两条路，二选一，别都跑）：
+#   · 本机：make publish-unsigned —— 能顺带签名/公证，产物来自你验过的机器，但占本机时间
+#   · CI：git push origin v<版本> —— 不占本机，但跑在 GitHub 的 macOS 上，SDK 与你本机未必一致
+#   同一个 tag 两边都跑会在 Release 上互相覆盖附件，选一条就行。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要构建的 tag（形如 v1.0.0-alpha.2），必须已经推送到远端'
+        required: true
+        type: string
+      publish:
+        description: '直接公开（默认建草稿）'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  package:
+    name: 打包
+    runs-on: macos-15
+    timeout-minutes: 40
+
+    steps:
+      - name: 取源码（要完整历史）
+        uses: actions/checkout@v4
+        with:
+          # build 号是 git rev-list --count HEAD，浅克隆会算错
+          fetch-depth: 0
+
+      - name: 确定 tag 与版本
+        id: meta
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null \
+              || { echo "::error::远端没有 tag $TAG"; exit 1; }
+            git checkout --detach "refs/tags/$TAG"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          VER="$(tr -d ' \n' < VERSION)"
+          if [ "v$VER" != "$TAG" ]; then
+            echo "::error::VERSION 里是 $VER，tag 却是 $TAG —— 先把 VERSION 改成与 tag 一致再推 tag"
+            exit 1
+          fi
+
+          case "$VER" in
+            *-*) PRE=1 ;;
+            *)   PRE=0 ;;
+          esac
+
+          echo "tag=$TAG"        >> "$GITHUB_OUTPUT"
+          echo "version=$VER"    >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRE" >> "$GITHUB_OUTPUT"
+          echo "build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          echo "提交：$(git log -1 --pretty='%h %s')"
+
+      - name: 工具链自检
+        run: |
+          set -euo pipefail
+          sw_vers
+          swift --version
+          xcodebuild -version
+
+      - name: 单测
+        run: swift test
+
+      - name: 组包（.app + DMG）
+        run: |
+          set -euo pipefail
+          bash scripts/build-app.sh
+          bash scripts/make-dmg.sh
+
+      - name: 打 ZIP 与校验和
+        run: |
+          set -euo pipefail
+          VER="${{ steps.meta.outputs.version }}"
+          rm -f "dist/FunFan-$VER.zip"
+          ditto -c -k --keepParent dist/FunFan.app "dist/FunFan-$VER.zip"
+          ( cd dist && shasum -a 256 "FunFan-$VER.dmg" "FunFan-$VER.zip" > SHA256SUMS.txt )
+          cat dist/SHA256SUMS.txt
+
+      - name: 产物校验
+        run: |
+          set -euo pipefail
+          VER="${{ steps.meta.outputs.version }}"
+          BUILD="${{ steps.meta.outputs.build }}"
+
+          # 签名结构必须自洽。adhoc 身份下 spctl 必然被拒，那是预期，不作为门槛。
+          codesign --verify --strict --verbose=2 dist/FunFan.app
+
+          # 版本号要真的进了 Info.plist，否则用户装了也看不出是不是新包
+          PLIST_VER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/FunFan.app/Contents/Info.plist)"
+          PLIST_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' dist/FunFan.app/Contents/Info.plist)"
+          [ "$PLIST_VER" = "$VER" ]      || { echo "::error::Info.plist 版本 $PLIST_VER ≠ $VER"; exit 1; }
+          [ "$PLIST_BUILD" = "$BUILD" ]  || { echo "::error::Info.plist build $PLIST_BUILD ≠ $BUILD"; exit 1; }
+
+          # helper 必须在包内，否则「一键启用」在用户机上没有可装的东西
+          test -x dist/FunFan.app/Contents/MacOS/FunFanHelper
+          test -f dist/FunFan.app/Contents/Library/LaunchDaemons/com.funfan.helper.plist
+
+          # 校验和必须能自校验
+          ( cd dist && shasum -a 256 -c SHA256SUMS.txt )
+
+      - name: 生成 release notes
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          VER="${{ steps.meta.outputs.version }}"
+          if [ -f "release-notes/$TAG.md" ]; then
+            cp "release-notes/$TAG.md" release-notes.md
+            echo "用 release-notes/$TAG.md"
+          else
+            # 文案与本机发布脚本同源，不在这里另写一套
+            bash scripts/gen-release-notes.sh --version "$VER" --output release-notes.md
+            echo "由 scripts/gen-release-notes.sh 生成"
+          fi
+          echo '--- 预览（前 20 行）---'
+          head -20 release-notes.md
+
+      - name: 挂到 Release
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          VER="${{ steps.meta.outputs.version }}"
+          PRE="${{ steps.meta.outputs.prerelease }}"
+          FILES=("dist/FunFan-$VER.dmg" "dist/FunFan-$VER.zip" "dist/SHA256SUMS.txt")
+
+          # 手动触发时可以选择直接公开；推 tag 一律先建草稿
+          DRAFT=1
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish }}" = "true" ]; then
+            DRAFT=0
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # 本机 `make publish-unsigned` 会先建好 release 再推 tag（推完几秒内就建完了），
+            # 等 CI 编译完跑过来，Release 早就有本机验过的产物。这里绝不覆盖——
+            # 用 CI 的包换掉本机验过的包，等于悄悄换了用户下载的东西。
+            HAVE="$(gh release view "$TAG" --json assets -q '.assets[].name' | tr '\n' ' ')"
+            MISSING=0
+            for f in "${FILES[@]}"; do
+              case "$HAVE" in
+                *"$(basename "$f")"*) ;;
+                *) MISSING=1 ;;
+              esac
+            done
+            if [ "$MISSING" = "0" ]; then
+              echo "Release $TAG 已有完整附件（本机发布过），跳过上传，只做编译验证。"
+              URL="$(gh release view "$TAG" --json url -q .url)"
+              {
+                echo "### FunFan $VER（tag \`$TAG\`）"
+                echo
+                echo "- 已有 Release：$URL"
+                echo "- 附件来自本机发布，本次 CI 只验证了「能编译、能打包、产物结构正确」，没有覆盖上传"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Release $TAG 存在但附件不全：补传缺失的${FILES[*]}"
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+            gh release edit "$TAG" --notes-file release-notes.md --title "FunFan $VER"
+          else
+            ARGS=(release create "$TAG" "${FILES[@]}"
+              --title "FunFan $VER"
+              --notes-file release-notes.md
+              --verify-tag)
+            [ "$PRE" = "1" ]  && ARGS+=(--prerelease)
+            [ "$DRAFT" = "1" ] && ARGS+=(--draft)
+            gh "${ARGS[@]}"
+          fi
+
+          URL="$(gh release view "$TAG" --json url -q .url)"
+          {
+            echo "### FunFan $VER（tag \`$TAG\`）"
+            echo
+            echo "- 产物：DMG / ZIP / SHA256SUMS"
+            echo "- 签名：adhoc（未公证，Gatekeeper 会拦一次）"
+            echo "- Release：$URL"
+            if [ "$DRAFT" = "1" ]; then
+              echo "- 状态：**草稿** —— 核对附件后点页面上的 Publish release"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 留存产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FunFan-${{ steps.meta.outputs.version }}
+          path: |
+            dist/FunFan-*.dmg
+            dist/FunFan-*.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: warn
