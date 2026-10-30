@@ -86,7 +86,33 @@ FunFan.app/Contents/
 
 版本号唯一来源是仓库根的 `VERSION` 文件；`CFBundleVersion` 取 `git rev-list --count HEAD`，单调递增且可复现。
 
-签名身份的来源顺序：`--identity` 参数 → `FUNFAN_SIGN_IDENTITY` 环境变量 → 自动找 `Developer ID Application` → 回退 adhoc。**adhoc 签名进不了 Gatekeeper，也无法公证**，只够本机调试与开发登录项；要出可分发的包必须用 Developer ID（见下节）。
+签名身份的来源顺序：`--identity` 参数 → `FUNFAN_SIGN_IDENTITY` 环境变量 → 自动找 `Developer ID Application` → 回退 adhoc。**adhoc 签名进不了 Gatekeeper，也无法公证**，只够本机调试与开发登录项；要出可分发的包必须用 Developer ID。
+
+### 签名与公证
+
+```bash
+make notary-check    # 体检：证书 / 公证凭据 / 硬运行时 / 调试权限，缺什么说什么
+make notarize        # 重建 .app → 打 DMG → 提交公证 → 装订 → Gatekeeper 验收
+make dmg             # 只打 DMG（有证书就顺带签 DMG）
+```
+
+`make notarize` 的流程与它刻意拦在提交前的东西：
+
+1. 用 Developer ID 重建并签名（内到外：先 helper 后 App，`--options runtime` 硬运行时）；
+2. **提交前预检**——硬运行时缺失、带 `get-task-allow`、helper 签名不通过，全部在此拦下。公证一次往返通常 1–5 分钟，让它在第 0 秒失败比在第 5 分钟失败划算；
+3. DMG 提交 `notarytool --wait`，非 `Accepted` 自动拉公证日志（`notarytool log`）；
+4. `stapler` 装订票据，最后 `spctl` 验收——**Gatekeeper 真的放行才算过**，退出码 0 才有意义。
+
+首次使用要准备两样东西（脚本只检查、不代办）：
+
+```bash
+# 1. Developer ID Application 证书：Xcode → Settings → Accounts → Manage Certificates → +
+# 2. 公证凭据（App 专用密码，不是 Apple ID 密码）
+xcrun notarytool store-credentials funfan-notary \
+  --apple-id "you@example.com" --team-id "TEAMID" --password "app-specific-password"
+```
+
+凭据名可用 `FUNFAN_NOTARY_PROFILE` 覆盖。**本机当前没有 Developer ID 证书**，所以公证链路只完成了失败路径与预检逻辑的验证（`make notary-check` 会准确报出缺证书、缺凭据），实际签名/公证/装订要在装好证书的机器上跑一遍才算验完。
 
 ## 代码结构
 
