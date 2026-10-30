@@ -34,7 +34,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -d "$APP_PATH" ] || die "找不到 $APP_PATH，先跑 bash scripts/build-app.sh"
+[ -d "$APP_PATH" ] || die "找不到 ${APP_PATH}，先跑 bash scripts/build-app.sh"
 mkdir -p "$OUT_DIR"
 
 VERSION="$(tr -d ' \n' < VERSION 2>/dev/null || echo 0.0.0)"
@@ -64,7 +64,7 @@ fi
 rm -rf "$(dirname "$STAGE")"
 
 SIZE="$(du -h "$DMG" | cut -f1)"
-ok "已生成 $DMG（$SIZE）"
+ok "已生成 ${DMG}（${SIZE}）"
 
 # DMG 本身也能签：让用户双击挂载时 Gatekeeper 的判定有签名依据。
 IDENTITY="$IDENTITY_ARG"
@@ -74,7 +74,7 @@ if [ -z "$IDENTITY" ]; then
 fi
 
 if [ -n "$IDENTITY" ] && [ "$IDENTITY" != "-" ]; then
-  step "签名 DMG（$IDENTITY）…"
+  step "签名 DMG（${IDENTITY}）…"
   codesign --force --sign "$IDENTITY" --timestamp "$DMG" || die "DMG 签名失败"
   codesign --verify --verbose=2 "$DMG" 2>&1 | sed 's/^/    /'
   ok "DMG 已签名"

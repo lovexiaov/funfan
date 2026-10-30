@@ -61,4 +61,61 @@ final class ScriptSyntaxTests: XCTestCase {
             )
         }
     }
+
+    /// `$变量` 后面不能直接跟中文（`$DMG（$SIZE）` 这种）。
+    ///
+    /// 为什么值得一条测试：macOS 自带的 bash 是 3.2，变量名解析走 `isalnum()`，
+    /// 在 UTF-8 locale 下会把多字节字符的首字节（比如全角括号的第一个字节 0xEF）
+    /// 当成变量名的一部分。于是 `$DMG（` 被解析成名为 `DMG\xEF` 的变量——C locale
+    /// 下一切正常，用户和 CI 的 UTF-8 环境里直接 `unbound variable` 退出。
+    /// agent 沙箱恰好是 C locale，本机跑不出这个问题，是 CI 的 macOS 15 runner
+    /// 让它现形的（`make-dmg.sh: line 67: DMG\xef: unbound variable`）。
+    /// 修法只有一种：写成 `${DMG}`。这条测试守住「只许花括号」。
+    func testVariableNeverGluedToMultibyteChar() throws {
+        var offenders: [String] = []
+
+        for script in try scripts() {
+            let text = try String(contentsOf: script, encoding: .utf8)
+            for (index, line) in text.components(separatedBy: .newlines).enumerated() {
+                let scalars = Array(line.unicodeScalars)
+                var inSingleQuote = false
+                var inDoubleQuote = false
+                var i = 0
+
+                // 单引号里 `$VAR` 是字面量，不参与展开，不能误判
+                while i < scalars.count {
+                    let scalar = scalars[i]
+                    if scalar == "'", !inDoubleQuote { inSingleQuote.toggle(); i += 1; continue }
+                    if scalar == "\"", !inSingleQuote { inDoubleQuote.toggle(); i += 1; continue }
+
+                    guard scalar == "$", !inSingleQuote else { i += 1; continue }
+
+                    var j = i + 1
+                    guard j < scalars.count, Self.isNameStart(scalars[j]) else { i += 1; continue }
+                    while j < scalars.count, Self.isNameChar(scalars[j]) { j += 1 }
+
+                    if j < scalars.count, scalars[j].value > 0x7F {
+                        let name = String(String.UnicodeScalarView(scalars[(i + 1)..<j]))
+                        offenders.append(
+                            "\(script.lastPathComponent):\(index + 1)  $\(name) 后面紧跟「\(scalars[j])」，应写成 ${\(name)}"
+                        )
+                    }
+                    i = j
+                }
+            }
+        }
+
+        XCTAssertTrue(
+            offenders.isEmpty,
+            "变量名后紧跟中文会被 bash 3.2 吞掉首字节：\n" + offenders.joined(separator: "\n")
+        )
+    }
+
+    private static func isNameStart(_ scalar: Unicode.Scalar) -> Bool {
+        (scalar >= "a" && scalar <= "z") || (scalar >= "A" && scalar <= "Z") || scalar == "_"
+    }
+
+    private static func isNameChar(_ scalar: Unicode.Scalar) -> Bool {
+        isNameStart(scalar) || (scalar >= "0" && scalar <= "9")
+    }
 }

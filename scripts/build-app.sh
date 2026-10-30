@@ -119,7 +119,7 @@ else
 fi
 
 for bin in FunFan "$HELPER_BIN_NAME"; do
-  [ -x ".build/release/$bin" ] || die "缺少 .build/release/$bin，先跑一次不带 --skip-build 的构建"
+  [ -x ".build/release/$bin" ] || die "缺少 .build/release/${bin}，先跑一次不带 --skip-build 的构建"
 done
 
 # MARK: - 组装

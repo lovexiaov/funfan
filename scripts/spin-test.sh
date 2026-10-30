@@ -22,7 +22,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 if [ ! -x "$BIN" ]; then
-  echo "→ 未找到 $BIN，先构建 release…"
+  echo "→ 未找到 ${BIN}，先构建 release…"
   swift build -c release --disable-sandbox || exit 1
 fi
 

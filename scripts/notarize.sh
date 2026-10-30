@@ -114,7 +114,7 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
   if [ -d "$APP_PATH" ]; then
     flags="$(codesign -dv --verbose=4 "$APP_PATH" 2>&1 | grep -o 'flags=[^ ]*' | head -1)"
     team="$(codesign -dv --verbose=4 "$APP_PATH" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
-    echo "✓ $APP_PATH 存在（$flags，TeamIdentifier=${team:-未设置}）"
+    echo "✓ $APP_PATH 存在（${flags}，TeamIdentifier=${team:-未设置}）"
     case "$flags" in
       *runtime*) ok "硬运行时：已开启（公证要求）" ;;
       *) echo "✗ 硬运行时：未开启（公证要求 --options runtime）"; failed=$((failed + 1)) ;;
@@ -162,7 +162,7 @@ if [ -z "$ARTIFACT" ]; then
   flags="$(codesign -dv --verbose=4 "$APP_PATH" 2>&1 | grep -o 'flags=[^ ]*' | head -1)"
   case "$flags" in
     *runtime*) ok "硬运行时已开启" ;;
-    *) die "缺少硬运行时（$flags），公证会拒" 4 ;;
+    *) die "缺少硬运行时（${flags}），公证会拒" 4 ;;
   esac
   if codesign -d --entitlements :- "$APP_PATH" 2>/dev/null | grep -q "get-task-allow"; then
     die "产物带 get-task-allow 调试权限，公证会拒" 4
@@ -187,10 +187,10 @@ if [ -z "$ARTIFACT" ]; then
 fi
 
 [ -e "$ARTIFACT" ] || die "找不到待公证产物：$ARTIFACT" 4
-ok "待公证产物：$ARTIFACT（$(du -h "$ARTIFACT" | cut -f1)）"
+ok "待公证产物：${ARTIFACT}（$(du -h "$ARTIFACT" | cut -f1)）"
 
 # 4) 提交公证（--wait 会同步等到出结果，通常 1–5 分钟）
-step "提交公证（凭据：$PROFILE）…"
+step "提交公证（凭据：${PROFILE}）…"
 SUBMIT_JSON="$(xcrun notarytool submit "$ARTIFACT" --keychain-profile "$PROFILE" --wait --output-format json 2>&1)"
 SUBMIT_STATUS=$?
 echo "$SUBMIT_JSON" | sed 's/^/    /'
@@ -204,12 +204,12 @@ if [ "$STATUS" != "Accepted" ]; then
   echo
   echo "✗ 公证未通过：${STATUS:-未知}"
   if [ -n "$SUBMISSION_ID" ]; then
-    step "拉取公证日志（$SUBMISSION_ID）…"
+    step "拉取公证日志（${SUBMISSION_ID}）…"
     xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "$PROFILE" 2>&1 | sed 's/^/    /'
   fi
   die "按日志修掉问题（常见：嵌二进制未签名、用私有 API、硬运行时缺失）后重跑" 5
 fi
-ok "公证通过（submission $SUBMISSION_ID）"
+ok "公证通过（submission ${SUBMISSION_ID}）"
 
 # 5) 装订：把公证票据贴进产物，用户离线也能通过 Gatekeeper
 step "装订 …"

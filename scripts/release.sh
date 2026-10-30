@@ -73,7 +73,7 @@ case "$VERSION" in
 esac
 
 echo
-echo "FunFan $VERSION（tag $TAG）$( [ "$PRERELEASE" -eq 1 ] && echo ' [预发布]')"
+echo "FunFan ${VERSION}（tag ${TAG}）$( [ "$PRERELEASE" -eq 1 ] && echo ' [预发布]')"
 echo
 
 # MARK: - 前置检查
@@ -84,7 +84,7 @@ command -v gh >/dev/null 2>&1 || die "找不到 gh（brew install gh）" 2
 gh auth status >/dev/null 2>&1 || die "gh 未登录（gh auth login）" 2
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-[ "$BRANCH" = "main" ] || check "当前分支是 $BRANCH，不是 main"
+[ "$BRANCH" = "main" ] || check "当前分支是 ${BRANCH}，不是 main"
 
 if [ -n "$(git status --porcelain)" ]; then
   check "工作区不干净，先提交或 stash（发布产物必须能从某个提交复现）"
@@ -97,10 +97,10 @@ AHEAD="$(git rev-list --count 'origin/main..HEAD' 2>/dev/null || echo 0)"
 [ "$AHEAD" -eq 0 ] || check "有 $AHEAD 个提交还没推送——远端 tag 会指向别人拉不到的提交"
 
 if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
-  check "本地已有 tag $TAG（要重发请先 git tag -d $TAG && git push origin :refs/tags/$TAG）"
+  check "本地已有 tag ${TAG}（要重发请先 git tag -d $TAG && git push origin :refs/tags/${TAG}）"
 fi
 if gh release view "$TAG" >/dev/null 2>&1; then
-  check "GitHub 上已有 release $TAG（补附件用 gh release upload $TAG <文件> --clobber）"
+  check "GitHub 上已有 release ${TAG}（补附件用 gh release upload $TAG <文件> --clobber）"
 fi
 ok "仓库状态可用"
 
