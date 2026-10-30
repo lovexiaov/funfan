@@ -25,19 +25,28 @@ git clone git@github.com:lovexiaov/funfan.git
 cd funfan
 
 make build        # 调试构建（含 CLI / helper / probe / GUI）
-make test         # 268 个单测
+make test         # 279 个单测
 make run          # 启动菜单栏 App
 ```
 
-只读功能（监控）**不需要 root**。写入风扇需要安装一次特权 helper，两种方式二选一：
+只读功能（监控）**不需要 root**。写入风扇要先装一次特权后台组件——**在 App 里点一下就行**，不需要开终端：
+
+```
+打开 FunFan → 菜单栏面板底部「一键启用」     （或 设置 → 风扇控制组件 → 一键安装）
+```
+
+安装器会自己挑路线，两种都只打扰你一次：
+
+| 情况 | 走哪条路 | 你会看到 |
+|---|---|---|
+| Developer ID 签名的正式包 | `SMAppService` 系统登记 | 系统设置里「允许」一次，之后随 App 升级不再问 |
+| adhoc / 开发构建 / 已被脚本装过 | 管理员授权直装 `/Library/PrivilegedHelperTools` | 一次系统密码框 |
+
+命令行等价物（开发期或排障用）：
 
 ```bash
-# 方式 A（正式）：从 App 里安装，系统只弹一次授权，之后随 App 升级
-make app && open dist/FunFan.app
-#   设置 → 风扇控制组件 → 安装
-
-# 方式 B（开发）：脚本直装 /Library/LaunchDaemons，每次都要 sudo
-make install-helper
+make app && open dist/FunFan.app   # 装好后从 App 里点按钮
+make install-helper                # 或脚本直装，每次都要 sudo
 ```
 
 装完验证：
@@ -47,7 +56,7 @@ make install-helper
 sudo ./.build/release/funfanctl spin --rpm 2950 --seconds 6   # 写入验证，结束自动返还
 ```
 
-两种安装**不能共存**（同名 label `com.funfan.helper` 会互抢 Mach service）：脚本装过的机器要先 `sudo bash scripts/install-helper.sh uninstall`，App 才会允许走方式 A；反过来，App 装过之后脚本也会拒绝安装并告诉你原因。
+两种安装落在**同一个路径、同一个 label**（`com.funfan.helper`），所以彼此互斥；「一键安装」会自动 `bootout` 旧进程再覆盖，不需要先手动卸载。反过来，App 装过之后脚本会拒绝安装并说明原因（防止两个写手抢同一个 Mach service）。
 
 ## 命令行
 
@@ -101,8 +110,11 @@ FunFan.app/Contents/
 `--helper-status` / `--helper-install` / `--helper-uninstall` 是给验收与脚本用的（必须直接跑包内可执行文件，`open --args` 拿不到 stdout）：
 
 ```bash
-dist/FunFan.app/Contents/MacOS/FunFan --helper-status     # 0 已启用 / 1 待批准 / 2 环境不支持
+dist/FunFan.app/Contents/MacOS/FunFan --helper-status     # 0 已可用 / 1 装了没生效 / 2 这个产物装不了
+dist/FunFan.app/Contents/MacOS/FunFan --helper-install    # 需要授权时会在终端弹出密码框
 ```
+
+状态输出把两套记账分开说：`SMAppService` 的系统登记状态，和直装到 `/Library/PrivilegedHelperTools` 的那份是否在、launchd 是否真在跑。混成一句会出现「系统未找到」但风扇明明能控的矛盾。
 
 每一行都会同时写到 `~/Library/Application Support/FunFan/helper-cli.log`——用户报障时直接贴这一段，比「装不上」三个字有用得多。
 
@@ -185,7 +197,7 @@ Tests/          268 个单测
 
 ## 状态
 
-M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、268 个单测全绿。
+M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、279 个单测全绿。
 
 策略四态（自动 / 固定 / 曲线 / 规则）全部可用，曲线与规则编辑器均已落地；设置窗口支持登录启动、菜单栏显示开关、一键自检与免责声明。
 

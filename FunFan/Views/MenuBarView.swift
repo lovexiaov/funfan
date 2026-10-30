@@ -7,12 +7,37 @@ struct MenuBarView: View {
     @ObservedObject var monitor: MonitorStore
     @ObservedObject var control: ControlStore
     @ObservedObject var diagnostics: DiagnosticsStore
+    @ObservedObject var installer: HelperInstaller
     var onOpenRules: () -> Void
     var onOpenCurve: () -> Void
     var onOpenSettings: () -> Void
     var onQuit: () -> Void
 
-    @State private var showCores = false
+    @State private var showCores: Bool
+
+    /// `initialShowCores` 只给离屏渲染走查用（`--render popover-cores`），
+    /// 正常运行时展开状态由用户点击决定。
+    init(
+        monitor: MonitorStore,
+        control: ControlStore,
+        diagnostics: DiagnosticsStore,
+        installer: HelperInstaller,
+        initialShowCores: Bool = false,
+        onOpenRules: @escaping () -> Void,
+        onOpenCurve: @escaping () -> Void,
+        onOpenSettings: @escaping () -> Void,
+        onQuit: @escaping () -> Void
+    ) {
+        self.monitor = monitor
+        self.control = control
+        self.diagnostics = diagnostics
+        self.installer = installer
+        self.onOpenRules = onOpenRules
+        self.onOpenCurve = onOpenCurve
+        self.onOpenSettings = onOpenSettings
+        self.onQuit = onQuit
+        _showCores = State(initialValue: initialShowCores)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -161,20 +186,45 @@ struct MenuBarView: View {
             }
 
             if !monitor.coreGroups.isEmpty {
-                DisclosureGroup(isExpanded: $showCores) {
+                coreDisclosure
+                if showCores {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(monitor.coreGroups) { group in
                             coreGroupRow(group)
                         }
                     }
-                    .padding(.top, 4)
-                } label: {
-                    Text(showCores ? "收起各核心温度" : "展开各核心温度")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.accent)
+                    .padding(.top, 2)
                 }
             }
         }
+    }
+
+    /// 自绘展开行。
+    ///
+    /// 原来用 `DisclosureGroup`，在 NSPopover 里点击不生效：它内部的展开箭头
+    /// 走的是 AppKit 宿主控件那条路，popover 这种非激活窗口里事件经常被吞掉，
+    /// 只有三角本身的极小命中区偶尔灵。改成一个铺满整行的 Button（`.plain`
+    /// 样式 + `contentShape`），点哪儿都算，命中区从几个点变成整行。
+    private var coreDisclosure: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                showCores.toggle()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .rotationEffect(.degrees(showCores ? 90 : 0))
+                Text(showCores ? "收起各核心温度" : "展开各核心温度")
+                    .font(.system(size: 10))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Theme.accent)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showCores ? "收起各核心温度" : "展开各核心温度")
+        .help(showCores ? "收起逐核温度" : "展开每个 CPU 核心的温度")
     }
 
     private func tempChip(_ label: String, _ value: Double?) -> some View {
@@ -316,12 +366,56 @@ struct MenuBarView: View {
             }
 
             if !control.helperStatus.isReady {
-                Text("控制功能需要安装特权 helper：sudo bash scripts/install-helper.sh")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
+                helperPrompt
             }
         }
+    }
+
+    /// 未安装后台组件时的引导。
+    ///
+    /// 以前这里只是一行灰字「跑 sudo bash scripts/install-helper.sh」——
+    /// 等于把最容易劝退的一步丢回给用户。现在给一个按钮，点了就装：
+    /// 能走系统登记就系统登记（一次授权），走不通就弹一次管理员密码直装。
+    private var helperPrompt: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 5) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.warm)
+                Text("只能监控，还不能控制风扇")
+                    .font(.system(size: 11, weight: .medium))
+                Spacer(minLength: 0)
+            }
+
+            Text(installer.note
+                 ?? "控制风扇需要安装一个后台组件（只装一次）。它只做一件事：代表 FunFan 写转速，FunFan 退出就立刻交还系统。")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                FunFanButton(
+                    title: installer.isBusy ? "安装中…" : "一键启用",
+                    systemImage: "lock.shield",
+                    isEnabled: !installer.isBusy && HelperInstaller.canInstallAnyhow
+                ) {
+                    installer.install()
+                }
+                FunFanButton(title: "设置…", systemImage: "gearshape") {
+                    onOpenSettings()
+                }
+            }
+
+            if let error = installer.error {
+                Text(error)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.hot)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(cardBackground)
     }
 
     /// 规则模式摘要：一眼看出「现在有没有在替我调风扇」。

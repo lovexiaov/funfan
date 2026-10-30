@@ -25,7 +25,7 @@ enum RenderCheck {
         //   1. 采样结果经 `DispatchQueue.main.async` 回填，而本函数本身就运行在
         //      主队列的 block 里——主队列串行，不返回就永远轮不到回填；
         //   2. 所以不能「就地等 runloop」，必须先把控制权交还事件循环再渲染。
-        guard target == "popover" else {
+        guard target == "popover" || target == "popover-cores" else {
             render(target: target, output: output, liveMonitor: nil)
             return true
         }
@@ -101,6 +101,19 @@ enum RenderCheck {
             content = AnyView(
                 MenuBarView(
                     monitor: monitor, control: control, diagnostics: DiagnosticsStore(),
+                    installer: HelperInstaller(),
+                    onOpenRules: {}, onOpenCurve: {}, onOpenSettings: {}, onQuit: {}
+                )
+                    .background(Color(nsColor: .windowBackgroundColor))
+            )
+        case "popover-cores":
+            // 展开态：验证「点了展开之后」的内容真的在可视区内（曾经的 bug 是
+            // 展开后高度不涨，内容画到了 popover 外面）
+            content = AnyView(
+                MenuBarView(
+                    monitor: monitor, control: control, diagnostics: DiagnosticsStore(),
+                    installer: HelperInstaller(),
+                    initialShowCores: true,
                     onOpenRules: {}, onOpenCurve: {}, onOpenSettings: {}, onQuit: {}
                 )
                     .background(Color(nsColor: .windowBackgroundColor))

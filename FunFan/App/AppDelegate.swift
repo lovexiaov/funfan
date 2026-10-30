@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
+    private var popoverHosting: NSHostingController<MenuBarView>?
+    private var popoverSizeObservation: NSKeyValueObservation?
     private let monitor = MonitorStore()
     private let control = ControlStore()
     private let rules = RulesStore()
@@ -71,6 +73,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     "特权 helper 不可用",
                     context: ["stage": "ControlStore.bootstrap"]
                 )
+            }
+            .store(in: &cancellables)
+
+        // 装好/卸掉后台组件后必须重连一次，否则界面还停在「只能监控」。
+        // 刚 bootstrap 的 daemon 有时还没把 Mach service 注册好，所以重试一次。
+        helperInstaller.$completionTick
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.control.bootstrap()
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                    guard let self, !self.control.helperStatus.isReady else { return }
+                    self.control.bootstrap()
+                }
             }
             .store(in: &cancellables)
 
@@ -214,17 +232,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = false
         popover.delegate = self
-        popover.contentViewController = NSHostingController(
+
+        let hosting = NSHostingController(
             rootView: MenuBarView(
                 monitor: monitor,
                 control: control,
                 diagnostics: diagnostics,
+                installer: helperInstaller,
                 onOpenRules: { [weak self] in self?.showRulesWindow() },
                 onOpenCurve: { [weak self] in self?.showCurveWindow() },
                 onOpenSettings: { [weak self] in self?.showSettingsWindow() },
                 onQuit: { NSApp.terminate(nil) }
             )
         )
+        // 让 hosting 自己把理想尺寸报上来，否则 popover 会一直用首次显示时的固定高度
+        hosting.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hosting
+        popoverHosting = hosting
+
+        // 内容高度是会变的（展开各核心温度、冲突提示条出现/消失），
+        // 而 NSPopover 只在 show 的那一刻量一次尺寸 —— 不同步的话，展开后的内容
+        // 会画在可视区外面，用户看到的就是「点了没反应」。
+        popoverSizeObservation = hosting.observe(\.preferredContentSize, options: [.new]) { [weak self] _, change in
+            guard let size = change.newValue, size.height > 0 else { return }
+            DispatchQueue.main.async {
+                guard let self, self.popover.isShown else { return }
+                guard abs(self.popover.contentSize.height - size.height) > 0.5 else { return }
+                self.popover.contentSize = size
+            }
+        }
     }
 
     @objc private func togglePopover() {
@@ -239,6 +275,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func popoverDidShow(_ notification: Notification) {
         popoverVisible = true
+        // 上次关掉时如果停在「展开各核心温度」，重开必须按展开后的高度显示，
+        // 否则内容会被按旧高度裁掉。这里在 show 之后补一次同步。
+        if let hosting = popoverHosting {
+            let size = hosting.preferredContentSize
+            if size.height > 0, abs(popover.contentSize.height - size.height) > 0.5 {
+                popover.contentSize = size
+            }
+        }
         refreshVisibility()
     }
 

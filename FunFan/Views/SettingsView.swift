@@ -131,7 +131,7 @@ struct SettingsView: View {
                             installer.openApprovalSettings()
                         }
                     }
-                    if installer.status.isInstalled || installer.status.needsUserApproval {
+                    if installer.isInstalled || installer.status.needsUserApproval {
                         FunFanButton(
                             title: "卸载",
                             systemImage: "trash",
@@ -141,9 +141,9 @@ struct SettingsView: View {
                         }
                     } else {
                         FunFanButton(
-                            title: installer.isBusy ? "安装中…" : "安装",
+                            title: installer.isBusy ? "安装中…" : "一键安装",
                             systemImage: "lock.shield",
-                            isEnabled: !installer.isBusy && HelperInstaller.isSupported
+                            isEnabled: !installer.isBusy && HelperInstaller.canInstallAnyhow
                         ) {
                             installer.install()
                         }
@@ -151,9 +151,10 @@ struct SettingsView: View {
                 }
             }
 
-            // 不支持注册时，subtitle 已经说明了原因，再叠一条 notFound 的指引只会互相矛盾。
-            if HelperInstaller.isSupported, let guidance = installer.status.guidance {
-                helperNote(guidance, color: installer.status.needsUserApproval ? Theme.warm : .secondary)
+            if let note = installer.note {
+                helperNote(note, color: installer.status.needsUserApproval ? Theme.warm : .secondary)
+            } else if let guidance = installer.status.guidance, !installer.isInstalled {
+                helperNote(guidance, color: .secondary)
             }
 
             if let error = installer.error {
@@ -163,19 +164,21 @@ struct SettingsView: View {
     }
 
     private var helperSubtitle: String {
-        if !HelperInstaller.isSupported { return HelperInstaller.unsupportedReason }
-        switch installer.status {
-        case .enabled:
+        if installer.status.isInstalled {
             return "已由系统登记并在运行，升级 App 无需重新授权"
-        case .requiresApproval:
-            return "已登记，但需要你在系统设置里批准后才会启动"
-        case .notRegistered:
-            return "安装后即可控制风扇；系统只弹一次授权，之后随 App 升级"
-        case .notFound:
-            return "系统找不到后台组件（见下方说明）"
-        case .unknown:
-            return "系统返回了未识别的状态（见下方说明）"
         }
+        if installer.directInstallPresent {
+            return "已安装（直装到 /Library/PrivilegedHelperTools，由 launchd 托管）"
+        }
+        if installer.status.needsUserApproval {
+            return "已在系统登记，需要你去系统设置批准后才会启动"
+        }
+        if HelperInstaller.canInstallAnyhow {
+            return HelperInstaller.isSupported
+                ? "安装后即可控制风扇；系统只弹一次授权，之后随 App 升级"
+                : "当前是开发构建（未签名），会弹一次管理员密码直装到 /Library"
+        }
+        return HelperInstaller.unsupportedReason
     }
 
     private func helperNote(_ text: String, color: Color) -> some View {
@@ -215,13 +218,16 @@ struct SettingsView: View {
             }
 
             if !control.helperStatus.isReady {
-                Text("当前未连接特权 helper，只能监控、无法控制风扇。先在上面安装「特权后台组件」；开发期也可用 sudo bash scripts/install-helper.sh 直装。")
+                // 装好了但连不上，和根本没装，是两件完全不同的事。
+                // 混成一句「未安装」会让刚装完的用户以为安装失败了。
+                Text(installer.isInstalled
+                     ? "后台组件已安装，但当前没连上（刚装好通常几秒内会自动重连）。点「运行」硬件自检可看到具体原因。"
+                     : "当前未连接特权后台组件，只能监控、无法控制风扇。先在上面点「一键安装」。")
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.warm)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 2)
-                    .textSelection(.enabled)
             }
         }
     }

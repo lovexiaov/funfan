@@ -37,28 +37,58 @@ enum HelperCLI {
         let installer = HelperInstaller()
         switch flag {
         case "--helper-install":
-            installer.install()
+            installer.install(sync: true)
+            waitForInstaller(installer)
         case "--helper-uninstall":
-            installer.uninstall()
+            installer.uninstall(sync: true)
+            waitForInstaller(installer)
         default:
             installer.refresh()
         }
 
-        emit("后台组件状态：\(installer.status.title)")
-        if let guidance = installer.status.guidance {
+        // 两套记账要分开说：SMAppService 的注册状态与直装到 /Library 的那份无关，
+        // 混在一起会出现「系统未找到」但风扇明明能控的矛盾输出。
+        if installer.directInstallPresent {
+            emit("后台组件：已直装到 \(HelperConstants.installedBinaryPath)")
+            emit("launchd 运行中：\(HelperInstaller.daemonLoaded() ? "是" : "否")")
+        } else if installer.status.isInstalled {
+            emit("后台组件：已由系统登记（SMAppService）")
+        } else {
+            emit("后台组件：\(installer.status.title)")
+        }
+        if let note = installer.note {
+            emit("说明：\(note)")
+        }
+        if !installer.directInstallPresent, let guidance = installer.status.guidance {
             emit("下一步：\(guidance)")
         }
         if let error = installer.error {
             emit("错误：\(error)")
         }
 
-        // 退出码约定：0 = 已启用（真正可用）；1 = 注册上了但没生效（待批准/未知）；2 = 环境不支持
+        // 退出码约定：0 = 已经能用；1 = 装了但没生效（待批准/未运行）；2 = 这个产物装不了
         if installer.status.isInstalled { return 0 }
-        if !supported { return 2 }
+        if installer.directInstallPresent { return HelperInstaller.daemonLoaded() ? 0 : 1 }
+        if !HelperInstaller.canInstallAnyhow { return 2 }
         return 1
     }
 
     // MARK: - 输出
+
+    /// 授权安装是异步的（`osascript` 子进程弹密码框），这里把主 runloop 转起来等它。
+    ///
+    /// 上限 5 分钟：够慢慢输密码，也不会在无人值守的脚本里无限挂住。
+    private static func waitForInstaller(_ installer: HelperInstaller) {
+        guard installer.isBusy else { return }
+        emit("等待管理员授权（系统会弹出密码框）…")
+        let deadline = Date().addingTimeInterval(300)
+        while installer.isBusy, Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+        }
+        if installer.isBusy {
+            emit("超时：5 分钟内没有完成授权。")
+        }
+    }
 
     /// 打印 + 追加落盘 + flush。
     private static func emit(_ line: String) {

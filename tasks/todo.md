@@ -224,6 +224,26 @@
   - 未验证：与 Macs Fan Control 真机共存（本机未装对方软件）。
   - Files: `FunFanCore/Control/ConflictDetector.swift`, `FunFan/System/RunningApps.swift`, `FunFan/Stores/ControlStore.swift`, `FunFan/Views/MenuBarView.swift`, `FunFanCtl/main.swift`
 
+- [x] T18b: 一键安装后台组件（管理员授权回退）+ Popover 展开失效修复
+  - Acceptance: 开发构建（adhoc / 裸二进制）也能在 UI 上点一下装好后台组件，不需要开终端敲 sudo；
+    「展开各核心温度」点击生效且展开后 popover 高度跟随。
+  - 为什么: SMAppService 在 adhoc 签名下能注册但启动不了，UI 上唯一的安装入口因此长期不可用；
+    而把用户赶去终端是最容易被放弃的一步。
+  - Verify 实测：
+    - `HelperInstallScript` 11 个单测（plist 可被 `PropertyListSerialization` 解析、命令顺序、
+      POSIX 单引号转义、AppleScript 转义顺序）；
+      其中两条是**外部校验器**跑的：`/bin/bash -n` 过安装/卸载脚本语法、`/usr/bin/osacompile`
+      真编译 AppleScript（转义写错会在这里炸，而不是在用户机器上）；
+    - 裸二进制 `--helper-status` 实测输出「后台组件：已直装到 /Library/PrivilegedHelperTools」+
+      「launchd 运行中：是」（本机装着脚本版，两套记账分开报）；
+    - 离屏渲染：收起态 320×458 pt、展开态 320×589 pt（+131 pt），
+      核心温度逐条正常、无重叠；设置页「已安装（直装…）+ 卸载」布局正常。
+  - 未验证：管理员授权路径的**真实密码框与落盘**（agent 沙箱内 `sudo` 被拒、`osascript`
+    弹框无法交互），需在用户终端跑一次「一键启用」确认。
+  - Files: `FunFanCore/Helper/HelperInstallScript.swift`, `FunFan/System/HelperInstaller.swift`,
+    `FunFan/Views/{MenuBarView,SettingsView}.swift`, `FunFan/App/AppDelegate.swift`,
+    `FunFan/DevTools/{HelperCLI,RenderCheck}.swift`, `Tests/FunFanCoreTests/HelperInstallScriptTests.swift`
+
 ---
 
 ## 完成判据（全量）
