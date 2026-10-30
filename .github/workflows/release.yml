@@ -51,7 +51,7 @@ jobs:
 
     steps:
       - name: 取源码（要完整历史）
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # build 号是 git rev-list --count HEAD，浅克隆会算错
           fetch-depth: 0
@@ -211,13 +211,9 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: 留存产物
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: FunFan-${{ steps.meta.outputs.version }}
-          path: |
-            dist/FunFan-*.dmg
-            dist/FunFan-*.zip
-            dist/SHA256SUMS.txt
-          if-no-files-found: warn
+# 为什么不上传 artifact：
+#   首跑时 `actions/upload-artifact` 直接把 job 判失败 —— 私有仓库的 Actions 存储
+#   配额已用满（Failed to CreateArtifact: Artifact storage quota has been hit），
+#   而且它是 `if: always()` 的收尾步骤，一失败就把整条流水线标红。
+#   产物本来就在 Release 附件里，失败时看日志、本机重跑一次即可，不值得为它多留
+#   一个会红的步骤。哪天真需要 artifact，记得同时加 continue-on-error: true。
