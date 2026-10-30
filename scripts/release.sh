@@ -183,60 +183,16 @@ SUMS="dist/SHA256SUMS.txt"
 # MARK: - Release notes
 
 NOTES_TMP="$(mktemp -t funfan-notes)"
-CHANGES_TMP="$(mktemp -t funfan-changes)"
 
 if [ -n "$NOTES_FILE" ]; then
   [ -f "$NOTES_FILE" ] || die "找不到 notes 文件：$NOTES_FILE"
   cp "$NOTES_FILE" "$NOTES_TMP"
 else
-  # 上一个 tag 到 HEAD 的提交标题。没有历史 tag 就是全部提交。
-  PREV_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
-  if [ -n "$PREV_TAG" ]; then
-    RANGE="$PREV_TAG..HEAD"
-  else
-    RANGE="HEAD"
-  fi
-  # 直接落文件，不经 heredoc/printf —— 提交标题里有反引号（键名、命令），
-  # 任何一句被 shell 当成命令替换都会静默改掉 release notes。
-  git log --pretty=format:'- %s' --no-merges "$RANGE" > "$CHANGES_TMP"
-
-  {
-    printf '### 安装\n\n'
-    printf '1. 下载 `FunFan-%s.dmg`，双击打开\n' "$VERSION"
-    printf '2. 把 FunFan 拖进「应用程序」，再卸载镜像（**别在 DMG 里直接运行**，那样会报「已损坏」）\n'
-    if [ "$NOTARIZED" -eq 0 ]; then
-      printf '3. 双击 FunFan：macOS 会拦一次「Apple 无法验证」\n'
-      printf '4. 点「完成」（**不要**点「移到废纸篓」），然后 **系统设置 → 隐私与安全性 → 安全性 → 仍要打开**，用 Touch ID 或密码确认\n\n'
-    else
-      printf '3. 双击 FunFan：菜单栏出现风扇图标即完成，不需要安装包\n\n'
-    fi
-    printf '> 控制风扇需要安装一次后台组件：\n'
-    printf '> 菜单栏图标 → 面板底部「一键启用」→ 输入一次系统密码。\n'
-    printf '> 组件只在你操作时写风扇，FunFan 退出/睡眠/合盖都会立刻交还系统。\n\n'
-    if [ "$NOTARIZED" -eq 0 ]; then
-      printf '### ⚠️ 这个包没有经过公证\n\n'
-      printf '项目没有购买 Apple Developer Program（$99/年），产物是 adhoc 签名，所以 macOS 会拦一次。'
-      printf '按上面第 3–4 步放行一次即可长期使用；**每次升级都要重复**，因为下载会重新带上隔离属性。\n\n'
-      printf '找不到「仍要打开」按钮（它只在尝试打开后约 1 小时内出现），或者你更习惯打命令：\n\n'
-      printf '```bash\n'
-      printf 'xattr -dr com.apple.quarantine /Applications/FunFan.app\n'
-      printf '```\n\n'
-    fi
-    printf '### 变更\n\n'
-  } > "$NOTES_TMP"
-  cat "$CHANGES_TMP" >> "$NOTES_TMP"
-  {
-    # git log 的最后一行的末尾没有换行符，这里补齐标题前必须的空行
-    printf '\n\n'
-    printf '### 校验\n\n'
-    printf '```bash\n'
-    printf 'shasum -a 256 -c SHA256SUMS.txt\n'
-    printf '```\n\n'
-    printf '### 系统要求\n\n'
-    printf 'macOS 13 Ventura 或更高，Apple Silicon（M1 及以上）。\n'
-  } >> "$NOTES_TMP"
+  # 文案与 CI 共用 scripts/gen-release-notes.sh，避免两条发布路径说出两套话。
+  NOTES_ARGS=(--version "$VERSION" --output "$NOTES_TMP")
+  [ "$NOTARIZED" -eq 1 ] && NOTES_ARGS+=(--notarized)
+  bash scripts/gen-release-notes.sh "${NOTES_ARGS[@]}" || die "生成 release notes 失败" 3
 fi
-rm -f "$CHANGES_TMP"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo
