@@ -123,7 +123,12 @@ enum RenderCheck {
             exit(2)
         }
 
-        let renderer = ImageRenderer(content: content.environment(\.colorScheme, .dark))
+        let base = AnyView(content.environment(\.colorScheme, .dark))
+        // 强制把焦点环画出来（ImageRenderer 不参与响应者链，本来拿不到焦点）
+        let themed = CommandLine.arguments.contains("--force-focus")
+            ? AnyView(base.environment(\.forceFocusRing, true))
+            : base
+        let renderer = ImageRenderer(content: themed)
         renderer.scale = Double(scaleValue())
 
         guard let image = renderer.nsImage,

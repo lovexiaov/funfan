@@ -365,6 +365,7 @@ struct CurveEditorView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .funfanFocusRing(cornerRadius: 7, outset: 2)
                 .help(preset.detail)
             }
 

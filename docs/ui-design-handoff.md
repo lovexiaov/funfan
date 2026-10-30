@@ -201,6 +201,7 @@ FunFanHelper/      HelperMain · XPCService · LaunchDaemon.plist
 | 设置屏：诊断区 | `DiagnosticsStore.runSummary` + 「复制」 | 设计稿只写「运行 doctor」。这里拆成两件事：**自检**（一句话结论）给普通用户，**复制完整报告**（Markdown）给报 bug 的用户，避免让他们先读 40 行再发现自己只需要一句「有没有问题」 |
 | 设置屏：退出返还 | 只读行（锁图标 + 「始终开启」） | 这是安全不变量而不是偏好项（Spec §7），做成可关闭的开关等于给了用户「让风扇留在手动转速」的机会 |
 | Popover 风扇区「目标」行在自动模式显示 `—` | `Views/MenuBarView.swift` → `fanSection` | `restoreAuto` 刻意只写模式键、**绝不写** `F0Tg`（写目标反而会把风扇拉起来），所以自动模式下 `F0Tg` 会留着上一次的残留值。原来直接显示它，读起来像「模式=系统自动，但还在按 1850 跑」。改为自动时显示 `—`，CLI `status` 同步标注「（残留值，未生效）」 |
+| 键盘焦点环（设计稿未涉及） | `Views/FocusRing.swift` → `.funfanFocusRing(cornerRadius:outset:)`，套在全部自绘控件上 | 自绘换来了离屏可渲染，但也失去了原生控件的焦点外观：系统只能给整块 view 套**直角矩形**焦点环。开启「全键盘控制」（`AppleKeyboardUIMode = 2`）后，每个窗口/浮层一出现焦点就落在首个可聚焦控件上，直角框会一直挂着，套在胶囊开关和圆角卡片上明显错位。改为按控件自身形状画环（accent 2 pt，外扩 2–4 pt），macOS 14+ 同时 `focusEffectDisabled()` 关掉系统矩形环避免叠双层；13 无该 API，退化为系统环。**没有关闭键盘导航**——关掉环等于让全键盘用户失去「焦点在哪」的唯一提示 |
 
 **设计走查方法**
 ```
@@ -211,6 +212,13 @@ swift build --disable-sandbox
 ./.build/debug/FunFan --render popover  /tmp/pop.png    --scale 3
 ./.build/debug/FunFan --render editor   /tmp/editor.png --scale 3
 ```
+
+焦点环不在 `ImageRenderer` 的产出里（它不参与响应者链，拿不到键盘焦点），加 `--force-focus` 可以强制画出来走查几何：
+```
+./.build/debug/FunFan --render settings /tmp/focus.png --force-focus
+./.build/debug/FunFan --render popover  /tmp/focus.png --force-focus
+```
+真实焦点一次只会落在一个控件上，这个开关是为了同时看到所有形状对不对。
 离屏渲染（`ImageRenderer`）可校验纯 SwiftUI 的文本/图形/布局，但**不呈现** `ScrollView` 内容与 AppKit 宿主控件；需要完整真机像素时用真实截图（需关闭沙箱）：
 ```
 screencapture -x /tmp/shot.png

@@ -40,6 +40,7 @@ struct StrategySegmented: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .funfanFocusRing(cornerRadius: 6, outset: 1.5)
                 .disabled(isDisabled)
                 .accessibilityLabel("调速策略 \(item.label)")
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
@@ -87,6 +88,8 @@ struct FunFanToggle: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // 胶囊半高即圆角半径，环才是胶囊形状而不是矩形
+        .funfanFocusRing(cornerRadius: size * 0.29, outset: 3)
         // 注：`.accessibilityAddTraits(.isToggle)` 需 macOS 14+，本项目部署目标为 13，
         // 故用 label + value + hint 组合表达同样的开关语义。
         .accessibilityLabel(label ?? "开关")
@@ -133,6 +136,7 @@ struct FunFanButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .funfanFocusRing(cornerRadius: 6)
         .disabled(!isEnabled)
         .accessibilityLabel(title)
     }

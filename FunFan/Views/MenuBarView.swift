@@ -76,6 +76,8 @@ struct MenuBarView: View {
                     .font(.system(size: 11))
             }
             .buttonStyle(.plain)
+            // 只有图标，环要比字形让出去更多才不至于像个紧箍
+            .funfanFocusRing(cornerRadius: 5, outset: 4)
             .foregroundStyle(.secondary)
             .help("设置")
             .accessibilityLabel("设置")
@@ -223,6 +225,7 @@ struct MenuBarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .funfanFocusRing(cornerRadius: 6, outset: 2)
         .accessibilityLabel(showCores ? "收起各核心温度" : "展开各核心温度")
         .help(showCores ? "收起逐核温度" : "展开每个 CPU 核心的温度")
     }
@@ -441,6 +444,7 @@ struct MenuBarView: View {
 
             Button("编辑规则…") { onOpenRules() }
                 .buttonStyle(.plain)
+                .funfanFocusRing(cornerRadius: 5, outset: 3)
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.accent)
         }
@@ -470,6 +474,7 @@ struct MenuBarView: View {
 
             Button("编辑曲线…") { onOpenCurve() }
                 .buttonStyle(.plain)
+                .funfanFocusRing(cornerRadius: 5, outset: 3)
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.accent)
         }
@@ -490,11 +495,13 @@ struct MenuBarView: View {
             Spacer(minLength: 4)
             Button("诊断") { diagnostics.copyReport() }
                 .buttonStyle(.plain)
+                .funfanFocusRing(cornerRadius: 5, outset: 2)
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .help("复制完整诊断信息到剪贴板（机型/系统/SMC 能力逐项实测 + 排查建议）")
             Button("退出") { onQuit() }
                 .buttonStyle(.plain)
+                .funfanFocusRing(cornerRadius: 5, outset: 2)
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
