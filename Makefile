@@ -5,20 +5,23 @@
 
 SWIFT_FLAGS := --disable-sandbox
 
-.PHONY: help build release test run doctor diagnose raw status spin install-helper uninstall-helper clean
+.PHONY: help build release test run run-app app sign-info doctor diagnose raw status spin install-helper uninstall-helper clean
 
 help:
 	@echo "FunFan 开发命令："
 	@echo "  make build              调试构建（含 CLI / helper / probe / GUI）"
 	@echo "  make release            release 构建"
 	@echo "  make test               跑全部单测"
-	@echo "  make run                启动菜单栏 GUI"
+	@echo "  make run                启动菜单栏 GUI（裸二进制，开发态）"
+	@echo "  make app                打包成 dist/FunFan.app（登录项/helper/公证都要它）"
+	@echo "  make run-app            打包并启动 dist/FunFan.app"
+	@echo "  make sign-info          看当前会自动选用的签名身份"
 	@echo "  make doctor             硬件诊断（只读）"
 	@echo "  make diagnose           系统信息采集：能力逐项实测 + 排查建议"
 	@echo "  make raw KEY=TR0Z       看原始字节与候选解码（也可 TYPE=ioft 扫全表）"
 	@echo "  make status             风扇状态（只读）"
 	@echo "  make spin               真机写入验证（需要 sudo）"
-	@echo "  make install-helper     安装特权 helper（需要 sudo）"
+	@echo "  make install-helper     安装特权 helper（需要 sudo，开发期直装）"
 	@echo "  make uninstall-helper   卸载特权 helper（需要 sudo）"
 
 build:
@@ -32,6 +35,15 @@ test:
 
 run: build
 	./.build/debug/FunFan
+
+app:
+	./scripts/build-app.sh
+
+run-app: app
+	open dist/FunFan.app
+
+sign-info:
+	@./scripts/build-app.sh --print-identity
 
 doctor: release
 	./.build/release/funfanctl doctor

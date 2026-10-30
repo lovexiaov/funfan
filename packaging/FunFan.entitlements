@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  FunFan 主 App 的 entitlements。
+
+	  故意留空：本 App 不使用 App Sandbox（需要读 AppleSMC、注册登录项、
+	  与特权 helper 通信），也不加载第三方插件，因此硬运行时下不需要任何例外。
+
+	  曾经考虑但**不需要**的项，写在这里避免后人重复踩：
+	  · com.apple.security.device.* —— 没有 SMC 对应的能力位，读 SMC 靠的是
+	    非沙箱进程直接打开 IOKit 服务，不是 entitlement；
+	  · disable-library-validation —— 只链系统动态库；
+	  · files.user-selected.read-write —— 诊断报告写在 Application Support 下，
+	    不走 NSSavePanel 授权路径。
+
+	  如果将来加了自动更新（Sparkle）之类需要加载自定义 dylib 的组件，
+	  再单独评估 disable-library-validation。
+	-->
+</dict>
+</plist>

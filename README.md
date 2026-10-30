@@ -64,6 +64,30 @@ GUI 支持几个调试启动参数，用来在没有人在屏幕前的情况下�
 
 `--simulate-lid` 是为**没有盖子的机器**准备的：合盖判定本身验不了，但「接管 → 合盖返还 → 挂起期间拒绝重新接管 → 开盖恢复」这条链可以。取值 `closed` / `open` / `cycle`（`cycle` = 3 s 后合盖、11 s 后开盖）。
 
+## 打包与分发
+
+SwiftPM 只产出裸可执行文件，而裸二进制**没有 bundle 标识**：`SMAppService`（登录项、特权 helper）一律注册失败，公证工具也没有东西可提交。所以分发形态必须先有 `.app`：
+
+```bash
+make app          # → dist/FunFan.app（内到外签名，默认 adhoc）
+make run-app      # 打包并启动
+make sign-info    # 看会自动选用哪个签名身份
+```
+
+包结构：
+
+```
+FunFan.app/Contents/
+  Info.plist                              LSUIElement=true（菜单栏常驻、无 Dock 图标）
+  MacOS/FunFan                            GUI
+  MacOS/FunFanHelper                      特权 helper 本体
+  Library/LaunchDaemons/com.funfan.helper.plist   给 SMAppService.daemon 用（BundleProgram 相对路径）
+```
+
+版本号唯一来源是仓库根的 `VERSION` 文件；`CFBundleVersion` 取 `git rev-list --count HEAD`，单调递增且可复现。
+
+签名身份的来源顺序：`--identity` 参数 → `FUNFAN_SIGN_IDENTITY` 环境变量 → 自动找 `Developer ID Application` → 回退 adhoc。**adhoc 签名进不了 Gatekeeper，也无法公证**，只够本机调试与开发登录项；要出可分发的包必须用 Developer ID（见下节）。
+
 ## 代码结构
 
 ```

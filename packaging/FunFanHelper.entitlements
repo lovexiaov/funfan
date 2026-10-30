@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  FunFanHelper（root LaunchDaemon）的 entitlements。
+
+	  同样故意留空：helper 以 root 身份运行，写 SMC 靠的是 euid=0，
+	  不依赖任何 entitlement。沙箱更不可能开——它要直接打开 AppleSMC。
+
+	  安全边界由另外两处保证，不在这里：
+	  1. helper 只接受满足 `identifier "com.funfan.app" and anchor apple generic
+	     and certificate leaf[subject.OU] = "<TeamID>"` 的客户端（见 HelperSignature）；
+	  2. helper 只写 F0Tg / 模式键 / Ftst，且带 10 s 租约与退出返还。
+	-->
+</dict>
+</plist>
