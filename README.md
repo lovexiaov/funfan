@@ -25,7 +25,7 @@ git clone git@github.com:lovexiaov/funfan.git
 cd funfan
 
 make build        # 调试构建（含 CLI / helper / probe / GUI）
-make test         # 216 个单测
+make test         # 247 个单测
 make run          # 启动菜单栏 App
 ```
 
@@ -66,7 +66,7 @@ FunFan/         SwiftUI 菜单栏 App
 FunFanCtl/      CLI（funfanctl）
 FunFanHelper/   特权 helper（XPC + 看门狗）
 FunFanProbe/    真机探针
-Tests/          216 个单测
+Tests/          247 个单测
 ```
 
 ## 几个真机上踩到的坑
@@ -98,9 +98,11 @@ Tests/          216 个单测
 
 ## 状态
 
-M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、216 个单测全绿。
+M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、247 个单测全绿。
 
-未完成：T14b（曲线编辑器 + 设置窗口）、T16b 端到端合盖验证（需笔记本机型）、M6（签名 / 公证 / 打包）。
+策略四态（自动 / 固定 / 曲线 / 规则）全部可用，曲线与规则编辑器均已落地；设置窗口支持登录启动、菜单栏显示开关、一键自检与免责声明。
+
+未完成：T16b 端到端合盖验证（需笔记本机型）、M6（签名 / 公证 / 打包）。
 
 ## 许可
 

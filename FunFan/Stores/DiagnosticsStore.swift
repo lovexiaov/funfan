@@ -31,6 +31,31 @@ final class DiagnosticsStore: ObservableObject {
         }
     }
 
+    /// 设置窗口用：跑一次诊断只给结论（不复制、不落盘）。
+    ///
+    /// 与「诊断」按钮的区别：那个是为了报 bug（复制全文），这个是为了自检——
+    /// 用户只想知道「有没有问题」，不想读 40 行 Markdown。
+    func runSummary(completion: @escaping (String) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let report = SystemInfoCollector.collect(reason: "设置窗口自检")
+            let failed = report.capabilities.filter { $0.status == .failed }.count
+            let degraded = report.capabilities.filter { $0.status == .degraded }.count
+
+            var text: String
+            if failed > 0 {
+                text = "\(failed) 项失败\(degraded > 0 ? "、\(degraded) 项降级" : "")"
+            } else if degraded > 0 {
+                text = "无失败，\(degraded) 项降级"
+            } else {
+                text = "全部正常"
+            }
+            if let keys = report.system.temperatureKeyCount {
+                text += " · 温度键 \(keys) 个"
+            }
+            DispatchQueue.main.async { completion(text) }
+        }
+    }
+
     /// 手动触发：复制 Markdown 到剪贴板，同时落盘一份（用户事后还能找到）。
     func copyReport(reason: String = "用户手动复制诊断信息") {
         DispatchQueue.global(qos: .userInitiated).async {

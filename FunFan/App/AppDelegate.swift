@@ -14,9 +14,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let curve = CurveStore()
     private let lid = LidMonitor()
     private let diagnostics = DiagnosticsStore()
+    private let settings = SettingsStore()
 
     private var rulesWindow: NSWindow?
     private var curveWindow: NSWindow?
+    private var settingsWindow: NSWindow?
     private var popoverVisible = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -51,6 +53,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             .sink { [weak self] _ in self?.refreshVisibility() }
             .store(in: &cancellables)
 
+        // 菜单栏标题跟随「显示温度」开关（关掉后只留图标）
+        settings.$showsMenuBarTemperature
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateTitle(cpu: self.monitor.cpuAverage)
+            }
+            .store(in: &cancellables)
+
         // 能力出错（helper 不可用 / 连不上）时自动落一份系统信息，
         // 用户报 bug 时直接取文件，不用再教他跑命令。
         control.$helperStatus
@@ -75,6 +85,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if CommandLine.arguments.contains("--curve-window") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 self?.showCurveWindow()
+            }
+        }
+        if CommandLine.arguments.contains("--settings-window") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.showSettingsWindow()
             }
         }
     }
@@ -108,6 +123,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func updateTitle(cpu: Double?) {
         guard let button = statusItem.button else { return }
+        // 设置里关掉「菜单栏显示温度」时只留图标，给菜单栏省出空间
+        guard settings.showsMenuBarTemperature else {
+            button.title = ""
+            return
+        }
         button.title = cpu.map { String(format: " %.0f°", $0) } ?? ""
     }
 
@@ -124,6 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 diagnostics: diagnostics,
                 onOpenRules: { [weak self] in self?.showRulesWindow() },
                 onOpenCurve: { [weak self] in self?.showCurveWindow() },
+                onOpenSettings: { [weak self] in self?.showSettingsWindow() },
                 onQuit: { NSApp.terminate(nil) }
             )
         )
@@ -208,6 +229,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         curveWindow = window
+    }
+
+    // MARK: - 设置窗口
+
+    private func showSettingsWindow() {
+        if let window = settingsWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let hosting = NSHostingController(
+            rootView: SettingsView(
+                settings: settings,
+                control: control,
+                diagnostics: diagnostics
+            )
+        )
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "FunFan · 设置"
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.isReleasedWhenClosed = false
+        window.setContentSize(NSSize(width: 540, height: 600))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        settingsWindow = window
     }
 
     // MARK: - 系统事件

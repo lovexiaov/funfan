@@ -9,6 +9,7 @@ struct MenuBarView: View {
     @ObservedObject var diagnostics: DiagnosticsStore
     var onOpenRules: () -> Void
     var onOpenCurve: () -> Void
+    var onOpenSettings: () -> Void
     var onQuit: () -> Void
 
     @State private var showCores = false
@@ -42,6 +43,14 @@ struct MenuBarView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }
+            Button(action: onOpenSettings) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("设置")
+            .accessibilityLabel("设置")
         }
     }
 

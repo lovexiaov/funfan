@@ -155,7 +155,11 @@
   - Files: `FunFanCore/Control/{CommandGate,CurveAutomation,CurvePreset}.swift`, `FunFanCore/Rules/CurvePersistence.swift`, `FunFan/Stores/CurveStore.swift`, `FunFan/Views/CurveEditorView.swift`
   - 设计取舍：① 安全下限**优先于斜率限制**——95℃ 时不允许「慢慢爬」，必须立刻满转（`testSafetyFloorBeatsSlewRate` 钉死）；② 死区/重断言逻辑从 `RuleAutomation` 抽到 `ControlCommandGate`，规则与曲线共用，避免两条策略抖动行为分叉；③ 原生 bordered 按钮在离屏渲染下只能画出禁止符，新增 `FunFanButton` 自绘。
 
-- [ ] T14c: SettingsView（设置窗口：登录启动 / 菜单栏显示 / doctor / 免责声明）
+- [x] T14c: SettingsView（设置窗口：登录启动 / 菜单栏显示 / 自检 / 免责声明）
+  - Acceptance: 登录启动可注册/取消（走 `SMAppService`）；「菜单栏显示温度」立即生效；硬性安全项（退出/合盖返还）以只读方式常驻展示；一键自检给出「几项失败/降级」结论；免责声明常驻可见。
+  - Verify: 离屏渲染核查设置窗口（三节布局、长文案换行、免责声明完整、无溢出）；真机启动（`--settings-window`）进程存活无崩溃，退出后风扇仍为 `automatic`。
+  - Files: `FunFan/Stores/SettingsStore.swift`, `FunFan/Views/SettingsView.swift`, `FunFan/App/AppDelegate.swift`, `FunFan/Views/MenuBarView.swift`
+  - 取舍：① **不做假开关**——设计稿提到「传感器勾选」，但当前温度宫格是固定四项、没有可勾选列表，与其摆一个点了没反应的开关，不如不放；② 开发态（裸二进制、无 `.app` 包）注册登录项必然失败，显式识别并说明原因，而不是把系统错误码丢给用户；③ 设置页不用 `ScrollView`（离屏渲染不填充内容），内容高度约 560 pt 直接铺开。
 - [ ] T16b: 合盖检测 + 端到端规则自动调速验证（需先装 helper）
   - [x] 合盖检测：`LidPolicy`（判据纯函数，4 组单测）+ `LidMonitor`（在线显示列表 + 屏幕变化通知）+ `ControlStore.suspendForLid/resumeAfterLid`
   - [x] helper 安装：`scripts/install-helper.sh` 增加安装后 `codesign --force --sign -`（SPM 直出的 linker-signed 签名会被 launchd 拒绝，报 `Bootstrap failed: 5`）

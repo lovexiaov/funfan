@@ -73,11 +73,20 @@ enum RenderCheck {
                 Button("C: native button") {}
                 Button("D: plain style") {}.buttonStyle(.plain)
             }.padding().frame(width: 420, height: 220))
+        case "settings":
+            content = AnyView(
+                SettingsView(
+                    settings: SettingsStore(),
+                    control: control,
+                    diagnostics: DiagnosticsStore()
+                )
+                .frame(width: 540, height: 600)
+            )
         case "popover":
             content = AnyView(
                 MenuBarView(
                     monitor: monitor, control: control, diagnostics: DiagnosticsStore(),
-                    onOpenRules: {}, onOpenCurve: {}, onQuit: {}
+                    onOpenRules: {}, onOpenCurve: {}, onOpenSettings: {}, onQuit: {}
                 )
                     .background(Color(nsColor: .windowBackgroundColor))
             )

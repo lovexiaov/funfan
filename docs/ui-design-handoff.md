@@ -196,12 +196,17 @@ FunFanHelper/      HelperMain · XPCService · LaunchDaemon.plist
 | 曲线屏：三档预设按钮 | 自绘（`RoundedRectangle` 背景 + 选中描边） | 与 `StrategySegmented` 同源：原生 bordered 按钮在 `ImageRenderer` 下只画得出黄底禁止符，走查拿不到真实布局 |
 | 曲线屏底部工具栏按钮 | `Views/Components.swift` → `FunFanButton`（新增） | 同上。原生 `.bordered` + `.controlSize(.small)` 无法离屏渲染；自绘后视觉与截图都可控，且样式与 Popover 现有次级按钮一致 |
 | 分段控件扩成四态（自动/固定/**曲线**/规则） | `ControlStore.Strategy` 增加 `.curve` | 曲线是独立策略而非规则的一种：规则是「命中才提速、否则返还」，曲线是「一直按映射给目标」，混在一起会让用户无法预期。320 pt 宽下四段标签（各 2 字）实测不截断 |
+| 设置屏：传感器勾选 | **未实现**（改为只放生效的开关） | 当前 Popover 温度宫格是固定四项（CPU/GPU/SSD/环境），没有可勾选的动态列表；摆一个点了没反应的开关比不放更糟。等做了可配置仪表盘再补 |
+| 设置屏：入口 | Popover 头部齿轮图标（`gearshape`） | 页面已有「编辑规则…/编辑曲线…」两处文字入口，footer 再塞三个文字按钮会挤；头部图标是 macOS 菜单栏工具的惯例位置 |
+| 设置屏：诊断区 | `DiagnosticsStore.runSummary` + 「复制」 | 设计稿只写「运行 doctor」。这里拆成两件事：**自检**（一句话结论）给普通用户，**复制完整报告**（Markdown）给报 bug 的用户，避免让他们先读 40 行再发现自己只需要一句「有没有问题」 |
+| 设置屏：退出返还 | 只读行（锁图标 + 「始终开启」） | 这是安全不变量而不是偏好项（Spec §7），做成可关闭的开关等于给了用户「让风扇留在手动转速」的机会 |
 
 **设计走查方法**
 ```
 swift build --disable-sandbox
 ./.build/debug/FunFan --render rules    /tmp/rules.png  --scale 3
 ./.build/debug/FunFan --render curve    /tmp/curve.png  --scale 3
+./.build/debug/FunFan --render settings /tmp/settings.png --scale 3
 ./.build/debug/FunFan --render popover  /tmp/pop.png    --scale 3
 ./.build/debug/FunFan --render editor   /tmp/editor.png --scale 3
 ```
