@@ -213,6 +213,23 @@ make publish-unsigned    # 真发：单测 → 打包 → DMG + ZIP + SHA256SUMS
 
 未公证的包，release notes 里会自动插入解除隔离属性的命令，内容是「安装」一节的简版——用户从 Release 页面点进来就能看到该怎么做，不必回头翻 README。详见 [docs/RELEASE.md](docs/RELEASE.md)。
 
+### 推 tag 自动打包（GitHub Actions）
+
+不想占本机时间，或者手上不是开发机时，把 tag 推上去就够了：
+
+```bash
+echo 1.0.0-alpha.2 > VERSION && git commit -am "版本号 1.0.0-alpha.2"
+git tag -a v1.0.0-alpha.2 -m "FunFan 1.0.0-alpha.2" && git push origin v1.0.0-alpha.2
+```
+
+`.github/workflows/release.yml` 会在 GitHub 的 macOS 机器上跑：单测 → 组 `.app` → DMG → ZIP → `SHA256SUMS.txt` → 校验产物结构 → **建草稿 Release** 并挂上三个附件。`VERSION` 与 tag 不一致会直接失败，不会糊里糊涂发出去。
+
+> CI 里没有证书，出的同样是 **adhoc 未公证包**，和 `make publish-unsigned` 一个性质。哪天买了证书，把证书与 notarytool 凭据放进 Secrets，再把工作流里「组包」那步换成 `bash scripts/notarize.sh` 就能出已公证的包。
+
+两条路选一条跑，别都跑：本机 `make publish-unsigned` 会自己建 release 再推 tag，CI 到的时候会看见 release 已有完整附件，于是**只做编译验证、不上传覆盖**——用 CI 的包换掉你验过的包，等于悄悄换了用户下载的东西。
+
+Release notes 的文案在 `scripts/gen-release-notes.sh`，本机脚本和 CI 都调它，所以两边说的一定是同一套话；想手写就放 `release-notes/v<版本>.md`，CI 会优先用它。
+
 ## 代码结构
 
 ```

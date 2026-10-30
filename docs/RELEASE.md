@@ -85,6 +85,27 @@ Release notes 由「上一个 tag 到 HEAD」的提交标题生成，外加固�
 ./scripts/release.sh --notes release-notes/v1.1.0.md
 ```
 
+### 2.1 自动打包：推 tag 就走 CI
+
+`.github/workflows/release.yml`，触发条件是推 `v*` tag 或在 Actions 页面手动指定 tag。
+
+| 阶段 | 做什么 | 失败即停 |
+|---|---|---|
+| 确定版本 | tag 与 `VERSION` 必须一致（`v1.0.0` ↔ `1.0.0`） | 是 |
+| 单测 | `swift test` | 是 |
+| 组包 | `scripts/build-app.sh` + `scripts/make-dmg.sh` | 是 |
+| 附件 | `ditto` 打 zip、`shasum -a 256` 出 `SHA256SUMS.txt` | 是 |
+| 产物校验 | `codesign --verify --strict`、Info.plist 版本/build 号与预期相符、helper 与 LaunchDaemon plist 在包内、校验和能自校验 | 是 |
+| Release | 已有完整附件 → 跳过（不覆盖）；没有 → 建**草稿**并上传；有但附件不全 → 补传 | 是 |
+
+几个刻意的选择：
+
+- **只能出 adhoc 包。** CI 没有证书和公证凭据。要出已公证的包，把证书导成 base64 存 Secrets、加 `notarytool store-credentials` 步骤、把「组包」换成 `scripts/notarize.sh`——这条链路目前只在本机脚本里验过。
+- **默认草稿。** 产物是机器打的，没人看过它长什么样；草稿状态是唯一能先核对再放出的口子。手动触发时把 `publish` 勾上可以一步公开。
+- **绝不覆盖本机发布的产物。** `scripts/release.sh` 是「本地打包 → 建 release → 推 tag」，CI 收到 tag 时 Release 早就建好了。若覆盖，用户下载的就不再是你在真机上验过的那份。所以 CI 见到附件齐全就只做编译验证。
+- **macOS 分钟数按 10 倍计。** 私有仓库每月 2000 分钟额度，macOS runner 折算后约 200 分钟，一次完整跑大约 5–8 分钟——一个月二十来次是上限。这项目发版频率不高，够用；真不够就把单测拆到 Linux（`FunFanCore` 里无 UI 依赖的部分可以单独测）。
+- **SDK 与本机不同。** runner 是 `macos-15`，开发机是更新的系统。部署目标是 macOS 13，编译器会替我们挡住「API 比 13 新」这类错误，但真机行为（尤其 SMC 读写）只有本机验得了。
+
 ---
 
 ## 3. 发出去之前的人工验收
