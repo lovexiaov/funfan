@@ -200,6 +200,7 @@ FunFanHelper/      HelperMain · XPCService · LaunchDaemon.plist
 | 设置屏：入口 | Popover 头部齿轮图标（`gearshape`） | 页面已有「编辑规则…/编辑曲线…」两处文字入口，footer 再塞三个文字按钮会挤；头部图标是 macOS 菜单栏工具的惯例位置 |
 | 设置屏：诊断区 | `DiagnosticsStore.runSummary` + 「复制」 | 设计稿只写「运行 doctor」。这里拆成两件事：**自检**（一句话结论）给普通用户，**复制完整报告**（Markdown）给报 bug 的用户，避免让他们先读 40 行再发现自己只需要一句「有没有问题」 |
 | 设置屏：退出返还 | 只读行（锁图标 + 「始终开启」） | 这是安全不变量而不是偏好项（Spec §7），做成可关闭的开关等于给了用户「让风扇留在手动转速」的机会 |
+| Popover 风扇区「目标」行在自动模式显示 `—` | `Views/MenuBarView.swift` → `fanSection` | `restoreAuto` 刻意只写模式键、**绝不写** `F0Tg`（写目标反而会把风扇拉起来），所以自动模式下 `F0Tg` 会留着上一次的残留值。原来直接显示它，读起来像「模式=系统自动，但还在按 1850 跑」。改为自动时显示 `—`，CLI `status` 同步标注「（残留值，未生效）」 |
 
 **设计走查方法**
 ```
@@ -214,3 +215,5 @@ swift build --disable-sandbox
 ```
 screencapture -x /tmp/shot.png
 ```
+
+`--render popover` 会先启动一轮真实采样再画（约 1.2 s），因此风扇转速、温度、传感器数都是真机值，不是占位符。这是唯一能核验「自动/手动两种模式下目标行取值不同」的方法——判定逻辑不在视图里，靠静态假数据看不出来。

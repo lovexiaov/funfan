@@ -41,6 +41,19 @@ final class LidMonitor {
         observer = nil
     }
 
+    /// 验收用：强制注入一个合盖状态并立刻回调。
+    ///
+    /// 存在的理由：台式机没有盖子，agent / 远程会话里也看不到内建屏，真实信号
+    /// 根本无从产生，但「合盖之后的行为链」（返还 → 拒绝重新接管 → 开盖恢复）
+    /// 是必须能验的。这条通道只由 `--simulate-lid` 调试参数调用。
+    ///
+    /// 刻意不做「与当前状态相同就 early return」：验收脚本需要在同一状态上
+    /// 重复触发，而下游 `suspend` / `resume` 本身都是幂等的。
+    func force(closed: Bool) {
+        isClosed = closed
+        onChange?(closed)
+    }
+
     // MARK: - 内部
 
     private func refresh(notify: Bool) {

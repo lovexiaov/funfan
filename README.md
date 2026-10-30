@@ -56,10 +56,13 @@ GUI 支持几个调试启动参数，用来在没有人在屏幕前的情况下�
 ```bash
 ./.build/debug/FunFan --strategy curve              # 启动即进入曲线策略
 ./.build/debug/FunFan --strategy fixed --rpm 3000   # 固定转速
+./.build/debug/FunFan --simulate-lid cycle          # 注入合盖→开盖往返
 ./.build/debug/FunFan --curve-window                # 直接开曲线编辑窗口
 ```
 
 `--strategy` 会在 bootstrap 完成 1.5 s 后生效，并把决定打进日志。验证时配合 `funfanctl status` 看「目标 / 模式」是否变化；`kill -9` 掉 GUI 后约 10 s 应自动回到 `automatic`（helper 租约看门狗）。
+
+`--simulate-lid` 是为**没有盖子的机器**准备的：合盖判定本身验不了，但「接管 → 合盖返还 → 挂起期间拒绝重新接管 → 开盖恢复」这条链可以。取值 `closed` / `open` / `cycle`（`cycle` = 3 s 后合盖、11 s 后开盖）。
 
 ## 代码结构
 

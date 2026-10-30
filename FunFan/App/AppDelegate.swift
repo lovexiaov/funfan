@@ -106,6 +106,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 NSLog("FunFan: 已按启动参数切到策略 \(requested.rawValue)")
             }
         }
+
+        // 验收用：`--simulate-lid closed|open|cycle` 注入合盖信号。
+        // 台式机没有盖子，真实信号永不产生；但「接管 → 合盖返还 → 拒绝重新接管 →
+        // 开盖恢复」这条链必须能验，否则只能等一台笔记本。
+        if let simulation = Self.launchLidSimulation() {
+            runLidSimulation(simulation)
+        }
+    }
+
+    // MARK: - 合盖模拟（验收用）
+
+    private enum LidSimulation {
+        case closed
+        case open
+        /// 先合盖再开盖，一条命令验完整个往返
+        case cycle
+    }
+
+    private static func launchLidSimulation() -> LidSimulation? {
+        guard let index = CommandLine.arguments.firstIndex(of: "--simulate-lid"),
+              CommandLine.arguments.indices.contains(index + 1) else { return nil }
+        switch CommandLine.arguments[index + 1] {
+        case "closed": return .closed
+        case "open": return .open
+        case "cycle": return .cycle
+        default: return nil
+        }
+    }
+
+    /// 时间点刻意排在 `--strategy`（1.5 s 生效）之后，才能验到「已接管被合盖打断」。
+    private func runLidSimulation(_ simulation: LidSimulation) {
+        func inject(_ closed: Bool, at seconds: TimeInterval) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+                NSLog("FunFan: 模拟合盖 = \(closed)")
+                self?.lid.force(closed: closed)
+            }
+        }
+        switch simulation {
+        case .closed:
+            inject(true, at: 3)
+        case .open:
+            inject(false, at: 3)
+        case .cycle:
+            inject(true, at: 3)
+            inject(false, at: 11)
+        }
     }
 
     // MARK: - 启动参数
@@ -200,10 +246,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         refreshVisibility()
     }
 
-    /// 采样频率：面板打开 > 自动化接管（规则/曲线）> 仅菜单栏。
+    /// 采样频率：合盖 > 面板打开 > 自动化接管（规则/曲线）> 仅菜单栏。
     private func refreshVisibility() {
         let visibility: SamplingPolicy.Visibility
-        if popoverVisible {
+        if lid.isClosed {
+            // 合盖：屏幕全黑，自动化引擎也已挂起，按空闲档（5 s）采样即可
+            visibility = .idle
+        } else if popoverVisible {
             visibility = .popoverOpen
         } else if control.strategy.isAutomated {
             visibility = .automation
@@ -300,7 +349,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.control.release()
+            // 用「挂起」而不是裸 release：睡眠期间必须拒绝重新接管，
+            // 否则采样线程可能在最后一帧把风扇又锁回手动转速
+            self?.control.suspendForSleep()
         }
 
         center.addObserver(
@@ -324,6 +375,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             } else {
                 self.control.resumeAfterLid()
             }
+            // 合盖后屏幕全黑，采样降到最低档
+            self.refreshVisibility()
         }
         lid.start()
     }

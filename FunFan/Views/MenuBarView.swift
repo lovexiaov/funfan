@@ -65,7 +65,9 @@ struct MenuBarView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 if let fan = monitor.primaryFan {
-                    detailRow("目标", String(format: "%.0f RPM", fan.targetRpm))
+                    // 自动模式下 `F0Tg` 留着上一次的残留值，显示出来会被理解成
+                    // 「还在按这个目标跑」。目标是手动模式才成立的概念，自动时留空。
+                    detailRow("目标", fan.isManual ? String(format: "%.0f RPM", fan.targetRpm) : "—")
                     detailRow("区间", String(format: "%.0f–%.0f", fan.minRpm, fan.normalizedMaxForUI))
                     detailRow("模式", fan.isManual ? "手动" : "系统自动")
                     if monitor.fans.count > 1 {

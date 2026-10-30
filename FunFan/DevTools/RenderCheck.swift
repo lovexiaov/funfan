@@ -20,7 +20,21 @@ enum RenderCheck {
 
         let target = args[index + 1]
         let output = args[index + 2]
-        render(target: target, output: output)
+
+        // popover 的内容依赖实时采样（风扇、温度）。这里有两条硬约束：
+        //   1. 采样结果经 `DispatchQueue.main.async` 回填，而本函数本身就运行在
+        //      主队列的 block 里——主队列串行，不返回就永远轮不到回填；
+        //   2. 所以不能「就地等 runloop」，必须先把控制权交还事件循环再渲染。
+        guard target == "popover" else {
+            render(target: target, output: output, liveMonitor: nil)
+            return true
+        }
+        let monitor = MonitorStore()
+        monitor.setVisibility(.popoverOpen)
+        monitor.start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            render(target: target, output: output, liveMonitor: monitor)
+        }
         return true
     }
 
@@ -34,14 +48,14 @@ enum RenderCheck {
     }
 
     @MainActor
-    private static func render(target: String, output: String) {
+    private static func render(target: String, output: String, liveMonitor: MonitorStore?) {
         let temporary = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("funfan-render-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent("rules.json")
 
         let rules = RulesStore(persistence: RulePersistence(fileURL: temporary))
         let control = ControlStore()
-        let monitor = MonitorStore()
+        let monitor = liveMonitor ?? MonitorStore()
 
         let content: AnyView
         switch target {

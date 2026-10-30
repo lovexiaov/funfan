@@ -195,8 +195,14 @@ func runStatus() {
     out("风扇数量：\(count)")
     for index in 0..<count {
         guard let state = try? driver.state(fanIndex: index) else { continue }
-        out(String(format: "Fan %d: 实际 %.0f  目标 %.0f  区间 %.0f–%.0f  模式 %@",
-                   index, state.actualRpm, state.targetRpm, state.minRpm, state.maxRpm, state.mode.rawValue))
+        // `restoreAuto` 刻意只写模式键、绝不写 `F0Tg`（写目标反而可能把风扇拉起来），
+        // 所以返还之后 `F0Tg` 会留着上一次的值。不标注的话，输出看起来像
+        // 「模式 automatic 但目标还是 1842」，非常容易被误读成「没返还干净」。
+        let target = state.isManual
+            ? String(format: "%.0f", state.targetRpm)
+            : String(format: "%.0f（残留值，未生效）", state.targetRpm)
+        out(String(format: "Fan %d: 实际 %.0f  目标 %@  区间 %.0f–%.0f  模式 %@",
+                   index, state.actualRpm, target, state.minRpm, state.maxRpm, state.mode.rawValue))
     }
 }
 

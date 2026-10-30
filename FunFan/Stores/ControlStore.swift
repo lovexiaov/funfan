@@ -343,6 +343,22 @@ final class ControlStore: ObservableObject {
     /// 合盖后机身散热条件变差、也可能被塞进包里，继续锁着手动转速没有任何好处，
     /// 因此无条件返还（不看当前策略）。
     func suspendForLid() {
+        suspend(message: suspendedMessage)
+    }
+
+    /// 系统即将睡眠：与合盖走同一条路径。
+    ///
+    /// 必须**也**置 `suspendedForLid`——只做返还而不挂起的话，采样线程可能在
+    /// 收到睡眠通知后的最后几帧里又接管回去，于是带着一个锁定的转速进入睡眠。
+    /// 合盖塞进包里的场景下，这正是最危险的一种状态。
+    func suspendForSleep() {
+        suspend(message: "系统睡眠：已返还自动控制")
+    }
+
+    /// 挂起接管的唯一实现：返还 + 停心跳 + 清引擎状态 + 打标记。
+    ///
+    /// 「返还了但没挂起」和「挂起了但没返还」都是 bug，所以两者必须绑在一处。
+    private func suspend(message: String) {
         queue.async { [weak self] in
             guard let self, !self.suspendedForLid else { return }
             self.suspendedForLid = true
@@ -358,7 +374,7 @@ final class ControlStore: ObservableObject {
                 self.triggeredRuleIDs = []
                 self.automatedRpm = nil
                 self.curveRawRpm = nil
-                self.message = self.suspendedMessage
+                self.message = message
             }
         }
     }

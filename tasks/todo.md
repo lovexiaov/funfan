@@ -168,7 +168,12 @@
 - [ ] T16b: 合盖检测 + 端到端规则自动调速验证（需先装 helper）
   - [x] 合盖检测：`LidPolicy`（判据纯函数，4 组单测）+ `LidMonitor`（在线显示列表 + 屏幕变化通知）+ `ControlStore.suspendForLid/resumeAfterLid`
   - [x] helper 安装：`scripts/install-helper.sh` 增加安装后 `codesign --force --sign -`（SPM 直出的 linker-signed 签名会被 launchd 拒绝，报 `Bootstrap failed: 5`）
-  - [ ] 端到端：规则越阈值 → 实际提速 → 合盖返还（需真机合盖验证；当前开发机为 Mac mini，无合盖能力，此项待笔记本机型）
+  - [x] **行为链**（2026-10-31 真机实测，`--simulate-lid cycle` 注入信号，Mac mini 上无盖也能验）：
+    · 接管 → 合盖：00:46:31.3 注入，之后 8 秒内即使采样继续也**没有任何重新接管**（`guard suspendedForLid` 生效）；
+    · 合盖 → 开盖：00:46:39.7 注入，0.3 秒后恢复 `manualFixed / 目标 1971`；
+    · 合盖期间采样自动降到 idle 档（5 s），减少塞包时的无谓 IPC。
+  - [x] **修复时序漏洞**：`willSleep` 原来只调 `release()`（返还不置挂起标记），采样线程可能在睡眠通知后的最后几帧重新接管，把风扇锁在手动转速里睡过去。改为 `suspendForSleep()`，与合盖共用同一条「返还 + 挂起 + 清引擎」路径。
+  - [ ] 合盖**判定**真机验证：需笔记本机型。本机 Mac mini 无内建屏、无电池，`isPortable=false` 使判定路径整体不生效，只能用模拟信号验行为。
 
 - [x] T18: 系统信息采集（诊断报告）
   - Acceptance: 一条命令/一次点击拿到「机型、系统、芯片、SMC 键总数、温度键与不可读项、风扇区间与模式键、电池、合盖、helper 安装状态」；每项能力给出 `ok/降级/不适用/失败` + 失败时的排查建议；可输出 Markdown（贴 issue）与 JSON（回归对比）；能力出错时自动落盘。
