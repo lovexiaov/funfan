@@ -125,10 +125,11 @@ fi
 
 DMG="dist/FunFan-$VERSION.dmg"
 ZIP="dist/FunFan-$VERSION.zip"
+NOTARIZED=0
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
   if [ "$DRY_RUN" -eq 1 ] || [ "$ALLOW_UNSIGNED" -eq 1 ]; then
-    step "构建（adhoc，不公证）…"
+    step "构建（不公证）…"
     bash scripts/build-app.sh || die "打包失败" 3
     bash scripts/make-dmg.sh || die "打 DMG 失败" 3
   else
@@ -143,6 +144,7 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
     fi
     step "签名 → 公证 → 装订 → 验收 …"
     bash scripts/notarize.sh || die "公证流程失败" 3
+    NOTARIZED=1
   fi
 else
   warn "已跳过构建（--skip-build），复用 dist/ 里的现有产物"
@@ -153,14 +155,16 @@ fi
 
 # 兜底：--skip-build 复用的是别人（可能是几小时前）打出来的包，
 # 不能因为跳过了构建就跳过这道门。adhoc 包发上去，用户下载后打不开。
-if [ "$ALLOW_UNSIGNED" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
-  TEAM_ID="$(codesign -dv --verbose=4 dist/FunFan.app 2>&1 \
-    | sed -n 's/^TeamIdentifier=//p' | head -1)"
-  case "$TEAM_ID" in
-    ""|"not set")
-      die "dist/FunFan.app 是 adhoc 签名（没有 Team ID），发出去会被 Gatekeeper 拒。想发内测包请加 --allow-unsigned" 2 ;;
-  esac
-  ok "签名 Team ID：$TEAM_ID"
+SIGNED_TEAM="$(codesign -dv --verbose=4 dist/FunFan.app 2>&1 \
+  | sed -n 's/^TeamIdentifier=//p' | head -1)"
+case "$SIGNED_TEAM" in
+  "not set") SIGNED_TEAM="" ;;
+esac
+if [ -z "$SIGNED_TEAM" ] && [ "$ALLOW_UNSIGNED" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+  die "dist/FunFan.app 是 adhoc 签名（没有 Team ID），发出去会被 Gatekeeper 拒。想发内测包请加 --allow-unsigned" 2
+fi
+if [ -n "$SIGNED_TEAM" ]; then
+  ok "签名 Team ID：$SIGNED_TEAM"
 fi
 
 # MARK: - 附件
@@ -204,9 +208,9 @@ else
     printf '> 控制风扇需要安装一次后台组件：\n'
     printf '> 菜单栏图标 → 面板底部「一键启用」→ 输入一次系统密码。\n'
     printf '> 组件只在你操作时写风扇，FunFan 退出/睡眠/合盖都会立刻交还系统。\n\n'
-    if [ "$ALLOW_UNSIGNED" -eq 1 ] || [ "$DRY_RUN" -eq 1 ]; then
-      printf '### ⚠️ 这个包没有公证\n\n'
-      printf '它用 adhoc 签名，macOS 会拦一次「无法验证开发者」。首次启动前执行：\n\n'
+    if [ "$NOTARIZED" -eq 0 ]; then
+      printf '### ⚠️ 这个包没有经过公证\n\n'
+      printf '首次启动时 macOS 可能拦一次「无法验证开发者」。若被拦，执行：\n\n'
       printf '```bash\n'
       printf 'xattr -dr com.apple.quarantine /Applications/FunFan.app\n'
       printf '```\n\n'
