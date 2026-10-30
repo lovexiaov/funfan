@@ -25,7 +25,7 @@ git clone git@github.com:lovexiaov/funfan.git
 cd funfan
 
 make build        # 调试构建（含 CLI / helper / probe / GUI）
-make test         # 247 个单测
+make test         # 268 个单测
 make run          # 启动菜单栏 App
 ```
 
@@ -152,7 +152,7 @@ FunFan/         SwiftUI 菜单栏 App
 FunFanCtl/      CLI（funfanctl）
 FunFanHelper/   特权 helper（XPC + 看门狗）
 FunFanProbe/    真机探针
-Tests/          247 个单测
+Tests/          268 个单测
 ```
 
 ## 几个真机上踩到的坑
@@ -178,13 +178,14 @@ Tests/          247 个单测
 |---|---|
 | [docs/macos-fan-control-research.md](docs/macos-fan-control-research.md) | 调研：SMC 协议、权限模型、开源方案对比、推荐路径 |
 | [docs/SPEC-FunFan.md](docs/SPEC-FunFan.md) | 规格：范围、架构、模块职责、验收标准 |
+| [docs/RELEASE.md](docs/RELEASE.md) | 发布手册：证书准备、出包步骤、人工验收清单、常见失败处理 |
 | [docs/ui-design-handoff.md](docs/ui-design-handoff.md) | UI 设计交付稿（含实现偏差附录） |
 | [docs/ui-prototype/funfan-design.html](docs/ui-prototype/funfan-design.html) | 可交互 HTML 原型 |
 | [tasks/todo.md](tasks/todo.md) | 任务清单与逐项验证记录 |
 
 ## 状态
 
-M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、247 个单测全绿。
+M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、268 个单测全绿。
 
 策略四态（自动 / 固定 / 曲线 / 规则）全部可用，曲线与规则编辑器均已落地；设置窗口支持登录启动、菜单栏显示开关、一键自检与免责声明。
 
