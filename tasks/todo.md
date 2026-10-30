@@ -249,6 +249,19 @@
     `FunFan/Views/{MenuBarView,SettingsView}.swift`, `FunFan/App/AppDelegate.swift`,
     `FunFan/DevTools/{HelperCLI,RenderCheck}.swift`, `Tests/FunFanCoreTests/HelperInstallScriptTests.swift`
 
+- [x] T19: 首个对外发布（alpha）
+  - Acceptance: `VERSION` 提到 `1.0.0-alpha.1`，一条命令发出 GitHub Release（prerelease，非草稿），
+    附件三件套齐全且与 tag 一致。
+  - Verify 实测：
+    - `bash scripts/release.sh --allow-unsigned --publish --notes release-notes/v1.0.0-alpha.1.md`
+      跑通：单测 281 全绿 → adhoc 打包 → DMG 968K / ZIP 972K / SHA256SUMS → tag `v1.0.0-alpha.1` → 发布；
+    - release 状态 `isDraft=false / isPrerelease=true`，三附件 `state=uploaded`；
+    - **哈希三方一致**：GitHub 记录的 asset digest、本地 `SHA256SUMS.txt`、本地重算三者完全相同；
+    - 挂载已发布的 DMG 复核：版本 `1.0.0-alpha.1` build 19、`FunFanHelper` 1.03 MB 在内、
+      `codesign --verify --deep --strict` 通过；tag 指向 `84a11d6`＝HEAD。
+  - 未验证：真实用户机器上的 Gatekeeper 放行流程（本机已放行过、隔离属性也清过，复现不出首次拦截）。
+  - Files: `VERSION`, `release-notes/v1.0.0-alpha.1.md`, `README.md`
+
 ---
 
 ## 完成判据（全量）

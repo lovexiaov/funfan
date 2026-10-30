@@ -20,6 +20,8 @@ macOS 菜单栏风扇控制工具，面向 **Apple Silicon**。零第三方依�
 
 从 [Releases](https://github.com/lovexiaov/funfan/releases) 下载 `FunFan-<版本>.dmg`。
 
+当前最新是 **`1.0.0-alpha.1`（预发布）**。alpha 的含义很具体：功能闭环，但合盖与第三方共存这两条路还没在真机上验过——该版本的发布说明里「已知问题」一节写全了。不稳定就先别装，或者从源码构建。
+
 > **这个包没有 Apple 签名证书，也没有经过公证。** FunFan 是个人项目，没有加入 Apple Developer Program（$99/年），产物是 adhoc 签名，macOS 会拦它一次，需要你手动放行。功能完全不受影响，代价只是首次启动多两步。信不过就往下看「从源码构建」，自己编出来的包不会有这道拦截。
 
 **1. 校验（可选，但建议）**
@@ -271,6 +273,8 @@ M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27�
 M6（打包加固）已落地：`.app` 打包、Developer ID 签名 + 公证 + 装订脚本、helper 一次授权（`SMAppService`）、第三方接管检测与 `doctor` 自检。公证链路只验到失败路径与提交前预检；打包后的 helper 注册还差一次真机复验（见 `tasks/todo.md` M6 的 Verify 记录）。
 
 **分发形态：未签名、未公证。** 已决定不购买 Apple Developer Program 会员（$99/年），对外发的就是 adhoc 签名的内测包，用户按「安装」一节手动放行一次。签名 + 公证的脚本留在仓库里，将来有证书可以直接启用，不需要改代码。这个选择的代价很具体：每个下载的人多两步点击，而且每次升级都要重复。
+
+首个对外版本已发布：[`v1.0.0-alpha.1`](https://github.com/lovexiaov/funfan/releases/tag/v1.0.0-alpha.1)（标为 prerelease，不进 Latest）。附件 `dmg` / `zip` / `SHA256SUMS.txt`，tag 指向构建它的那个提交。
 
 未完成：T16b 端到端合盖验证（需笔记本机型）。
 
