@@ -26,6 +26,22 @@ fi
 
 action="${1:-install}"
 
+# 与「系统授权安装」（App 内 SMAppService）互斥：两者都注册同名 label
+# com.funfan.helper，同时存在会互相抢 Mach service，表现为风扇忽然失控又忽然返还。
+# 判据用运行中 daemon 的 program 路径：SMAppService 那份一定在 .app 包内。
+if [ "$action" = "install" ] && launchctl print "system/${LABEL}" >/dev/null 2>&1; then
+  current_program="$(launchctl print "system/${LABEL}" 2>/dev/null | awk -F'= ' '/program =/{print $2; exit}')"
+  case "$current_program" in
+    *.app/Contents/MacOS/*)
+      echo "✗ 已经通过 App 内「安装特权组件」（SMAppService）注册过："
+      echo "    ${current_program}"
+      echo "  两条安装路径不能共存（同名 label 会互相抢服务）。"
+      echo "  要改用脚本直装，请先在 App 设置里卸载后台组件，再跑本脚本。"
+      exit 1
+      ;;
+  esac
+fi
+
 case "$action" in
   uninstall)
     echo "→ 停止并卸载 ${LABEL}…"

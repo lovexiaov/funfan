@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let lid = LidMonitor()
     private let diagnostics = DiagnosticsStore()
     private let settings = SettingsStore()
+    private let helperInstaller = HelperInstaller()
 
     private var rulesWindow: NSWindow?
     private var curveWindow: NSWindow?
@@ -323,14 +324,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             rootView: SettingsView(
                 settings: settings,
                 control: control,
-                diagnostics: diagnostics
+                diagnostics: diagnostics,
+                installer: helperInstaller
             )
         )
         let window = NSWindow(contentViewController: hosting)
         window.title = "FunFan · 设置"
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 540, height: 600))
+        window.setContentSize(NSSize(width: 540, height: 700))
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -342,6 +344,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func observeSystemEvents() {
         let center = NSWorkspace.shared.notificationCenter
+
+        // 用户去「系统设置 → 登录项与扩展」批准后台项后会切回来，
+        // 这时必须重读一次状态，否则设置页一直停在「待批准」。
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.helperInstaller.refresh()
+        }
 
         // 睡眠前返还，唤醒后重建 SMC 连接（睡眠会失效）
         center.addObserver(

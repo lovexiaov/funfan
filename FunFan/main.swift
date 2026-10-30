@@ -8,6 +8,11 @@ import AppKit
 
 let app = NSApplication.shared
 
+// 特权组件的命令行验收（不启动 UI，打印状态后直接退出）
+if let code = HelperCLI.runIfRequested() {
+    exit(code)
+}
+
 // 开发期视图渲染校验（不启动 UI，渲染后立即退出）
 if CommandLine.arguments.contains("--render") {
     DispatchQueue.main.async {

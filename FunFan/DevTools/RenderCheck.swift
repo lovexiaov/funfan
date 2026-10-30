@@ -92,9 +92,10 @@ enum RenderCheck {
                 SettingsView(
                     settings: SettingsStore(),
                     control: control,
-                    diagnostics: DiagnosticsStore()
+                    diagnostics: DiagnosticsStore(),
+                    installer: HelperInstaller()
                 )
-                .frame(width: 540, height: 600)
+                .frame(width: 540, height: 700)
             )
         case "popover":
             content = AnyView(

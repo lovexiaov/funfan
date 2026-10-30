@@ -12,6 +12,7 @@ struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var control: ControlStore
     @ObservedObject var diagnostics: DiagnosticsStore
+    @ObservedObject var installer: HelperInstaller
 
     @State private var diagnosisSummary: String?
     @State private var isDiagnosing = false
@@ -31,13 +32,14 @@ struct SettingsView: View {
             // 而 ScrollView 在 ImageRenderer 离屏渲染下不填充内容，设计走查会看到一片空白。
             VStack(alignment: .leading, spacing: 14) {
                 generalSection
+                helperSection
                 diagnosisSection
                 aboutSection
             }
             .padding(16)
             Spacer(minLength: 0)
         }
-        .frame(minWidth: 520, minHeight: 580)
+        .frame(minWidth: 520, minHeight: 690)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -111,6 +113,80 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - 特权组件
+
+    private var helperSection: some View {
+        section("风扇控制组件") {
+            SettingRow(
+                title: "特权后台组件",
+                subtitle: helperSubtitle
+            ) {
+                HStack(spacing: 7) {
+                    if installer.status.needsUserApproval {
+                        FunFanButton(
+                            title: "去批准",
+                            systemImage: "arrow.up.forward.app",
+                            isEnabled: !installer.isBusy
+                        ) {
+                            installer.openApprovalSettings()
+                        }
+                    }
+                    if installer.status.isInstalled || installer.status.needsUserApproval {
+                        FunFanButton(
+                            title: "卸载",
+                            systemImage: "trash",
+                            isEnabled: !installer.isBusy
+                        ) {
+                            installer.uninstall()
+                        }
+                    } else {
+                        FunFanButton(
+                            title: installer.isBusy ? "安装中…" : "安装",
+                            systemImage: "lock.shield",
+                            isEnabled: !installer.isBusy && HelperInstaller.isSupported
+                        ) {
+                            installer.install()
+                        }
+                    }
+                }
+            }
+
+            if let guidance = installer.status.guidance {
+                helperNote(guidance, color: installer.status.needsUserApproval ? Theme.warm : .secondary)
+            }
+
+            if let error = installer.error {
+                helperNote(error, color: Theme.hot)
+            }
+        }
+    }
+
+    private var helperSubtitle: String {
+        if !HelperInstaller.isSupported { return HelperInstaller.unsupportedReason }
+        switch installer.status {
+        case .enabled:
+            return "已由系统登记并在运行，升级 App 无需重新授权"
+        case .requiresApproval:
+            return "已登记，但需要你在系统设置里批准后才会启动"
+        case .notRegistered:
+            return "安装后即可控制风扇；系统只弹一次授权，之后随 App 升级"
+        case .notFound:
+            return "系统找不到后台组件（见下方说明）"
+        case .unknown:
+            return "系统返回了未识别的状态（见下方说明）"
+        }
+    }
+
+    private func helperNote(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 10))
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+    }
+
     // MARK: - 诊断
 
     private var diagnosisSection: some View {
@@ -138,7 +214,7 @@ struct SettingsView: View {
             }
 
             if !control.helperStatus.isReady {
-                Text("当前未连接特权 helper，只能监控、无法控制风扇。安装命令：sudo bash scripts/install-helper.sh")
+                Text("当前未连接特权 helper，只能监控、无法控制风扇。先在上面安装「特权后台组件」；开发期也可用 sudo bash scripts/install-helper.sh 直装。")
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.warm)
                     .fixedSize(horizontal: false, vertical: true)

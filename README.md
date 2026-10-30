@@ -29,13 +29,25 @@ make test         # 247 个单测
 make run          # 启动菜单栏 App
 ```
 
-只读功能（监控）**不需要 root**。写入风扇需要安装一次特权 helper：
+只读功能（监控）**不需要 root**。写入风扇需要安装一次特权 helper，两种方式二选一：
 
 ```bash
-make install-helper                    # sudo 安装到 /Library/LaunchDaemons
+# 方式 A（正式）：从 App 里安装，系统只弹一次授权，之后随 App 升级
+make app && open dist/FunFan.app
+#   设置 → 风扇控制组件 → 安装
+
+# 方式 B（开发）：脚本直装 /Library/LaunchDaemons，每次都要 sudo
+make install-helper
+```
+
+装完验证：
+
+```bash
 ./.build/release/funfanctl doctor      # 确认硬件与权限
 sudo ./.build/release/funfanctl spin --rpm 2950 --seconds 6   # 写入验证，结束自动返还
 ```
+
+两种安装**不能共存**（同名 label `com.funfan.helper` 会互抢 Mach service）：脚本装过的机器要先 `sudo bash scripts/install-helper.sh uninstall`，App 才会允许走方式 A；反过来，App 装过之后脚本也会拒绝安装并告诉你原因。
 
 ## 命令行
 
@@ -85,6 +97,14 @@ FunFan.app/Contents/
 ```
 
 版本号唯一来源是仓库根的 `VERSION` 文件；`CFBundleVersion` 取 `git rev-list --count HEAD`，单调递增且可复现。
+
+`--helper-status` / `--helper-install` / `--helper-uninstall` 是给验收与脚本用的（必须直接跑包内可执行文件，`open --args` 拿不到 stdout）：
+
+```bash
+dist/FunFan.app/Contents/MacOS/FunFan --helper-status     # 0 已启用 / 1 待批准 / 2 环境不支持
+```
+
+每一行都会同时写到 `~/Library/Application Support/FunFan/helper-cli.log`——用户报障时直接贴这一段，比「装不上」三个字有用得多。
 
 签名身份的来源顺序：`--identity` 参数 → `FUNFAN_SIGN_IDENTITY` 环境变量 → 自动找 `Developer ID Application` → 回退 adhoc。**adhoc 签名进不了 Gatekeeper，也无法公证**，只够本机调试与开发登录项；要出可分发的包必须用 Developer ID。
 

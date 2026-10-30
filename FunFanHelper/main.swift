@@ -11,6 +11,14 @@ import FunFanCore
 //   3. TTL 租约：GUI 不续租（崩溃/被杀）→ 自动返还系统自动，绝不把风扇锁死；
 //   4. 进程退出（SIGTERM/SIGINT）→ 返还所有动过的风扇。
 
+// MARK: - 日志
+
+/// 统一日志出口。LaunchDaemon 下 stderr 被重定向到 StandardErrorPath
+/// （/var/log/com.funfan.helper.log），前台运行时直接打到终端。
+func log(_ message: String) {
+    FileHandle.standardError.write("[FunFanHelper] \(message)\n".data(using: .utf8)!)
+}
+
 /// 特权侧的风扇服务实现。
 final class HelperService: NSObject, FunFanHelperXPCProtocol {
 
@@ -156,7 +164,7 @@ final class HelperService: NSObject, FunFanHelperXPCProtocol {
         lease = nil
         watchdog?.cancel()
         watchdog = nil
-        FileHandle.standardError.write("[FunFanHelper] 已返还系统自动（\(reason)）\n".data(using: .utf8)!)
+        log("已返还系统自动（\(reason)）")
     }
 }
 
@@ -165,14 +173,28 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
 
     private let service = HelperService()
 
+    /// 客户端签名要求：从**自己的签名**里取 Team ID 反推，而不是构建期注入常量。
+    ///
+    /// 签名本身才是唯一事实来源；在脚本里再写一份 Team ID，换证书时必然漂移。
+    /// 取不到（adhoc 开发签名）时返回 nil，即开发期不校验。
+    /// `FUNFAN_REQUIRE_SIGNATURE=0` 可强制关闭（仅供排障）。
+    private static let clientRequirement: String? = {
+        let flag = ProcessInfo.processInfo.environment["FUNFAN_REQUIRE_SIGNATURE"]
+        if flag == "0" { return nil }
+        guard let team = CodeSigningInfo.ownTeamIdentifier() else {
+            log("签名里没有 Team ID（adhoc），本次不校验客户端签名（仅开发期可接受）")
+            return nil
+        }
+        let requirement = HelperSignature.clientRequirement(teamID: team)
+        log("客户端签名要求：\(requirement ?? "（构造失败）")")
+        return requirement
+    }()
+
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
-        // 开发期（adhoc/未签名）放宽；发布期必须启用签名要求，只允许本 App 连接。
-        // 用法：FUNFAN_REQUIRE_SIGNATURE=1 启动时强制校验（由安装脚本设置）。
-        if ProcessInfo.processInfo.environment["FUNFAN_REQUIRE_SIGNATURE"] == "1" {
-            connection.setCodeSigningRequirement(
-                "identifier \"com.funfan.app\" and anchor apple generic"
-                + " and certificate leaf[subject.OU] = \"TEAMID\""
-            )
+        if let requirement = Self.clientRequirement {
+            // 不满足要求的连接会被系统在握手阶段直接掐断，
+            // 连 listener 回调都不会进到业务代码里。
+            connection.setCodeSigningRequirement(requirement)
         }
 
         connection.exportedInterface = NSXPCInterface(with: FunFanHelperXPCProtocol.self)
