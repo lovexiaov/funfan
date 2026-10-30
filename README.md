@@ -141,10 +141,11 @@ FunFanCore/     硬件与逻辑（无 UI 依赖，可单测）
   SMC/          AppleSMC 访问（80 字节结构体）、编解码、键枚举
   Monitor/      传感器目录、采样与平滑、采样频率策略
   Battery/      电量与电池明细
-  Control/      安全策略、曲线、规则引擎、控制器、租约
+  Control/      安全策略、曲线、规则引擎、控制器、租约、第三方接管检测
+  Helper/       特权组件的签名要求与注册状态（纯数据，可单测）
   Rules/        规则持久化（原子写、损坏降级）
   XPC/          与 helper 的契约
-  System/       机型/合盖判定
+  System/       机型/合盖判定、签名信息
   Diagnostics/  能力探测与诊断报告
   Types/        错误类型等公共定义
 FunFan/         SwiftUI 菜单栏 App
@@ -189,7 +190,9 @@ M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27�
 
 曲线策略已在真机跑通端到端：接管后 `manualFixed`、目标随温度单调跟随（2116→2333）、实际转速误差 0–3 RPM、`kill -9` 后 8 s 由租约看门狗返还 `automatic`。规则策略的写入链路与曲线共用同一套下发路径。
 
-未完成：T16b 端到端合盖验证（需笔记本机型）、M6（签名 / 公证 / 打包）。
+M6（打包加固）已落地：`.app` 打包、Developer ID 签名 + 公证 + 装订脚本、helper 一次授权（`SMAppService`）、第三方接管检测与 `doctor` 自检。**本机没有 Developer ID 证书**，所以公证成功路径与打包后的 helper 注册还差一次真机复验（见 `tasks/todo.md` M6 的 Verify 记录）。
+
+未完成：T16b 端到端合盖验证（需笔记本机型）、M6 的证书侧复验。
 
 ## 许可
 

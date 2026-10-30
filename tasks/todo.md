@@ -189,15 +189,40 @@
 
 ## M6 · 打包加固
 
-- [ ] T17: 签名 + 公证脚本 + entitlements + helper 一次授权
-  - Acceptance: `scripts/build.sh`/`notarize.sh` 完成 Developer ID 签名 + 公证；App 与 helper 各自 entitlements；helper 安装一次授权。
-  - Verify: `make build` + `./scripts/notarize.sh` 通过；Gatekeeper 不拦截。
-  - Files: `scripts/build.sh`, `scripts/notarize.sh`, `FunFan/*.entitlements`, `FunFanHelper/*.entitlements`
+> 进行中（2026-10-31）。本机**没有 Developer ID 证书**，所以「签名 + 公证 + 装订 + Gatekeeper 验收」
+> 这条链只完成了「失败路径 + 提交前预检」的验证，成功路径要装好证书的机器复验。
 
-- [ ] T18: 冲突检测 + doctor 自检 + 免责声明
+- [x] T17a: 把 SPM 产物打成可运行的 .app
+  - Acceptance: 产出 dist/FunFan.app（Info.plist 带 LSUIElement、bundle id、版本；helper 与 daemon plist 内嵌）；可启动、无 Dock 图标。
+  - Verify 实测：3.3 MB 包，内到外 adhoc 签名 `flags=0x10002(adhoc,runtime)`，`codesign --verify` 通过；
+    `open` 后进程存活，`lsappinfo` 报 `type="UIElement"`；`CFBundleExecutable` 一致性自检通过；
+    `spctl` 拒绝（adhoc 预期）；版本 1.0.0 (build=7 提交数)。
+  - Files: `packaging/{Info.plist,FunFan.entitlements,FunFanHelper.entitlements,com.funfan.helper.plist}`, `scripts/build-app.sh`, `VERSION`, `Makefile`
+
+- [x] T17b: Developer ID 签名 + 公证脚本
+  - Acceptance: `make notarize` 完成签名 → DMG → 公证 → 装订 → Gatekeeper 验收；无证书时给出可执行诊断。
+  - Verify 实测：`make notary-check` 在本机准确报「缺 Developer ID 证书 + 缺 funfan-notary 凭据」并退出 2，
+    同时确认现有包已开硬运行时、无 `get-task-allow`；`make dmg` 产出 880 KB DMG，挂载内容为
+    FunFan.app + Applications 软链。**公证成功路径未验证（本机无证书）**。
+  - Files: `scripts/notarize.sh`, `scripts/make-dmg.sh`
+
+- [x] T17c: helper 一次授权（SMAppService）
+  - Acceptance: App 内安装/卸载特权组件；helper 只接受自家签名客户端；与旧脚本安装互斥。
+  - Verify: 258 单测全绿（新增 11 个：签名要求串格式/单行/adhoc→nil/TeamID 去空白，状态映射与文案）。
+    裸二进制 `--helper-status` 实测输出「系统注册能力：不可用 —— 当前以开发模式运行」并退出 2。
+    **打包后的注册流程未在本机验证**：agent 沙箱内执行 .app 内可执行文件即被 SIGKILL
+    （`sandbox_extension_issue_file_to_process` 失败），需用户终端复验 `dist/FunFan.app/Contents/MacOS/FunFan --helper-status`。
+  - Files: `FunFanCore/Helper/*`, `FunFanCore/System/CodeSigningInfo.swift`, `FunFan/System/HelperInstaller.swift`, `FunFan/DevTools/HelperCLI.swift`
+
+- [x] T18: 冲突检测 + doctor 自检 + 免责声明
   - Acceptance: 启动探测 `F0Md` 被第三方持有时友好提示并拒绝接管；`doctor` 自检打印关键键名/代系；`SettingsView` 含安全免责声明。
-  - Verify: 与 Macs Fan Control 共存时不抢键；`doctor` 返回非空键名。
-  - Files: `FunFan/Stores/ControlStore.swift`(冲突检测), `FunFan/`(doctor), `FunFan/Views/SettingsView.swift`(免责)
+  - Verify 实测：`doctor` 新输出「机型标识 Mac16,10 / 芯片 Apple M4 / 架构 arm64 / 关键键 FNum、F0Tg、F0Md / F0md、Ftst」；
+    冲突检测 10 个单测（只有手动模式算冲突、持有租约不算、未知模式按手动、进程名单只用于解释）；
+    Popover 冲突提示条带「重新检测 / 仍要接管」；免责声明此前已在设置页落地。
+    判据刻意**只看硬件事实**（`F0Md=1` 且我们没租约），不依赖对方进程是否在名单里 ——
+    名单只用来把「有东西在控制」解释成「大概是 Macs Fan Control」。
+  - 未验证：与 Macs Fan Control 真机共存（本机未装对方软件）。
+  - Files: `FunFanCore/Control/ConflictDetector.swift`, `FunFan/System/RunningApps.swift`, `FunFan/Stores/ControlStore.swift`, `FunFan/Views/MenuBarView.swift`, `FunFanCtl/main.swift`
 
 ---
 

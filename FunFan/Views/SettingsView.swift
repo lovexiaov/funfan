@@ -151,7 +151,8 @@ struct SettingsView: View {
                 }
             }
 
-            if let guidance = installer.status.guidance {
+            // 不支持注册时，subtitle 已经说明了原因，再叠一条 notFound 的指引只会互相矛盾。
+            if HelperInstaller.isSupported, let guidance = installer.status.guidance {
                 helperNote(guidance, color: installer.status.needsUserApproval ? Theme.warm : .secondary)
             }
 

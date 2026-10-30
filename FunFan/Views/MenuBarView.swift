@@ -17,6 +17,9 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            if !control.conflict.isEmpty {
+                conflictBanner
+            }
             fanSection
             temperatureSection
             if monitor.battery.present {
@@ -52,6 +55,46 @@ struct MenuBarView: View {
             .help("设置")
             .accessibilityLabel("设置")
         }
+    }
+
+    // MARK: - 冲突提示
+
+    /// 第三方控制提示条。
+    ///
+    /// 文案刻意分开两句：第一句说**谁**（识别得到才说名字），
+    /// 第二句说**我们做了什么**（暂停接管），避免用户以为是自己配错了。
+    private var conflictBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.warm)
+                Text(control.conflictSource.map { "\($0) 正在控制风扇" } ?? "其他程序正在控制风扇")
+                    .font(.system(size: 11, weight: .medium))
+                Spacer(minLength: 0)
+            }
+
+            Text(control.conflict.map(\.summary).joined(separator: "；")
+                 + "。FunFan 已暂停接管，避免两个程序互相覆盖转速。退出对方软件后点「重新检测」。")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                FunFanButton(title: "重新检测", systemImage: "arrow.clockwise") {
+                    control.redetectConflict()
+                }
+                FunFanButton(title: "仍要接管", systemImage: "hand.raised") {
+                    control.takeOverAnyway()
+                }
+            }
+        }
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Theme.warm.opacity(0.10))
+        )
     }
 
     // MARK: - 风扇

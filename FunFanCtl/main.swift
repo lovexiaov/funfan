@@ -112,7 +112,12 @@ func runDoctor() {
     out("=== FunFan doctor ===")
     out("权限：\(isRoot ? "root ✓（可写）" : "普通用户（只读；写入请用 sudo）")")
     out("SMCParamStruct：\(MemoryLayout<SMCParamStruct>.size) 字节\(MemoryLayout<SMCParamStruct>.size == 80 ? " ✓" : " ✗ 异常")")
-    out("架构：\(ProcessInfo.processInfo.machineHardwareName)  系统：\(ProcessInfo.processInfo.operatingSystemVersionString)")
+    // 机型 + 芯片 + 系统：排障时这三项决定「这条结论适不适用于你的机器」
+    out("机型标识：\(ProcessInfo.processInfo.machineHardwareName)  芯片：\(ProcessInfo.processInfo.chipName)")
+    out("系统：\(ProcessInfo.processInfo.operatingSystemVersionString)  架构：\(ProcessInfo.processInfo.architectureLabel)")
+    // 键名速查：用户报障时最常需要确认的就是「你的机器上到底有没有这些键」。
+    out("关键键：\(SMCKeyName.fanCount)、\(SMCKeyName.fanTarget(0))、"
+        + "\(SMCKeyName.fanModeCandidates(0).joined(separator: " / "))、\(SMCKeyName.ftst)")
 
     guard let smc = openSMC() else { exit(1) }
     defer { smc.close() }
@@ -141,6 +146,11 @@ func runDoctor() {
             out("  状态：实际 \(String(format: "%.0f", state.actualRpm)) / 目标 \(String(format: "%.0f", state.targetRpm)) RPM，"
                 + "区间 \(String(format: "%.0f", state.minRpm))–\(String(format: "%.0f", state.maxRpm))，"
                 + "模式 \(state.mode.rawValue)")
+            // 冲突自检：手动模式是「有程序在写」的硬证据（系统自己不会进手动）。
+            if state.isManual {
+                out("  ⚠ 当前处于手动模式：若 FunFan 没在运行，说明有其他程序持有控制权"
+                    + "（Macs Fan Control / TG Pro 等）。FunFan 启动时会拒绝接管并提示，避免互相覆盖。")
+            }
             if index == 0 {
                 let limits = state.limits
                 let suggested = (limits.minRpm + limits.normalizedMax) / 2
@@ -474,6 +484,31 @@ extension ProcessInfo {
         sysctlbyname("hw.model", &buffer, &size, nil, 0)
         return String(cString: buffer)
     }
+
+    /// 芯片名（如 "Apple M4"）。`hw.model` 只给编号，排障时不够直观。
+    var chipName: String {
+        sysctlString("machdep.cpu.brand_string") ?? "未知"
+    }
+
+    /// 进程架构，区分 Rosetta 下运行（那会让 SMC 访问表现异常，值得一眼看见）。
+    var architectureLabel: String {
+        #if arch(arm64)
+        return "arm64"
+        #elseif arch(x86_64)
+        return isTranslated ? "x86_64（Rosetta）" : "x86_64"
+        #else
+        return "unknown"
+        #endif
+    }
+}
+
+/// 读一个字符串型 sysctl；失败返回 nil（不 throw，doctor 不该因为一项读不到就中断）。
+func sysctlString(_ name: String) -> String? {
+    var size = 0
+    guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+    var buffer = [CChar](repeating: 0, count: size)
+    guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
+    return String(cString: buffer)
 }
 
 let args = Array(CommandLine.arguments.dropFirst())

@@ -69,6 +69,14 @@ final class ControlStore: ObservableObject {
     /// 曲线本身给出的目标（未过安全下限），用于编辑器里显示「你画的 vs 实际下发的」。
     @Published private(set) var curveRawRpm: Double?
 
+    /// 检测到的第三方接管证据（空数组 = 无冲突）。
+    ///
+    /// 判据只有一条：我们没持租约，但风扇处于手动模式。谁在写不重要，
+    /// 重要的是**不能两个程序同时写同一个风扇**，否则转速会来回跳。
+    @Published private(set) var conflict: [ForeignControlEvidence] = []
+    /// 冲突来源的可读名字（识别不到时为 nil，不影响拦截）。
+    @Published private(set) var conflictSource: String?
+
     // MARK: - 内部
 
     private var transport: XPCTransport?
@@ -95,6 +103,9 @@ final class ControlStore: ObservableObject {
     /// 合盖期间挂起：返还系统自动，并拦住规则重新接管（只在控制队列上读写）。
     private var suspendedForLid = false
 
+    /// 冲突拦截的队列侧镜像（只在控制队列读写）。
+    private var mirroredConflictBlocked = false
+
     /// 租约心跳间隔：helper 侧 TTL 10 s，2 s 一次足够容错。
     private let heartbeatInterval: TimeInterval = 2
 
@@ -112,6 +123,14 @@ final class ControlStore: ObservableObject {
                 self.controller = controller
                 self.mirroredHelperReady = true
 
+                // 冲突检测：持有租约（唤醒重连）时的手动模式是我们自己造成的，
+                // 只有「没租约却处于手动」才说明有第三方在写。
+                let evidence = ConflictDetector.foreignEvidence(
+                    in: fans,
+                    holdingControl: self.heartbeat != nil
+                )
+                self.mirroredConflictBlocked = !evidence.isEmpty
+
                 if let primary = fans.first {
                     let limits = primary.limits
                     self.mirroredLimits = limits
@@ -123,7 +142,16 @@ final class ControlStore: ObservableObject {
 
                 DispatchQueue.main.async {
                     self.helperStatus = .available(fanCount: fans.count)
-                    self.message = "helper 已连接"
+                    if evidence.isEmpty {
+                        self.conflict = []
+                        self.conflictSource = nil
+                        self.message = "helper 已连接"
+                    } else {
+                        self.conflict = evidence
+                        // 进程名单只用来解释原因，识别不到也照样拦。
+                        self.conflictSource = RunningApps.fanControllerName()
+                        self.message = "检测到其他程序正在控制风扇，已停止接管"
+                    }
                 }
             } catch {
                 self.mirroredHelperReady = false
@@ -153,6 +181,13 @@ final class ControlStore: ObservableObject {
             DispatchQueue.main.async {
                 self.message = "未安装特权 helper，无法控制风扇"
             }
+            return
+        }
+
+        // 冲突期间只允许「返还」，不允许任何接管：两个程序同时写同一台风扇，
+        // 用户看到的是转速来回跳，实际是两个写手在互相覆盖。
+        if !conflict.isEmpty, strategy != .automatic {
+            message = "检测到其他程序已接管风扇，本次不下发；确需接管请点提示条上的「仍要接管」"
             return
         }
 
@@ -204,6 +239,35 @@ final class ControlStore: ObservableObject {
         }
     }
 
+    // MARK: - 冲突
+
+    /// 用户明确表示「我知道，还是要接管」。
+    ///
+    /// 这是**唯一**绕过冲突拦截的入口，且必须由用户点按钮触发。
+    /// 自动绕过等于没有检测——两个写手互相覆盖出来的转速抖动，
+    /// 比「不接管」更难排查。
+    func takeOverAnyway(forFan index: Int = 0) {
+        // 先入队再调 apply：串行队列保证「解除拦截」排在「下发」之前。
+        queue.async { [weak self] in
+            self?.mirroredConflictBlocked = false
+        }
+        conflict = []
+        conflictSource = nil
+        if strategy == .automatic {
+            message = "已解除拦截；选择固定 / 曲线 / 规则后才会真正接管"
+        } else {
+            apply(forFan: index)
+        }
+    }
+
+    /// 重新检测一次（用户退出对方软件后点）。
+    func redetectConflict() {
+        conflict = []
+        conflictSource = nil
+        message = "正在重新检测…"
+        bootstrap()
+    }
+
     // MARK: - 规则自动化
 
     /// 每帧采样回调（在监控队列上调用）。内部转到控制队列，避免阻塞采样。
@@ -213,6 +277,8 @@ final class ControlStore: ObservableObject {
             // 只有自动化策略才评估；自动/固定下不做任何多余计算
             guard self.mirroredStrategy.isAutomated else { return }
             guard !self.suspendedForLid else { return }
+            // 第三方正在控制时，规则/曲线一律不下发（宁可不动，也不和对方互相覆盖）
+            guard !self.mirroredConflictBlocked else { return }
             guard self.mirroredHelperReady, let controller = self.controller else { return }
 
             let now = Date()
