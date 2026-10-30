@@ -152,6 +152,11 @@
 - [x] T14b: CurveEditorView + 曲线策略（温度→转速连续调速）
   - Acceptance: 曲线可拖拽编辑（控制点不可越过邻居、步进 0.5℃/10 RPM）；安全下限以红色区域可视化且拖不进去；静音/均衡/性能三档预设按机型区间自适应；编辑即时落盘 `curve.json`；切到曲线策略后按当前温度持续接管。
   - Verify: `CommandGateTests`(7) + `CurveAutomationTests`(8) + `CurvePersistenceTests`/`CurvePresetTests`(16) 全绿，总计 247；离屏渲染核查曲线窗口（网格/折线/控制点/安全下限/预设/底部工具栏无截断重叠）；Popover 四态分段（自动/固定/曲线/规则）在 320pt 下不截断。
+  - Verify（真机端到端，2026-10-31 实测）：新增 `--strategy curve` 启动参数后无人值守跑通全链路——
+    · 接管：启动 1.5 s 后 `status` 由 `automatic/1000` 变为 `manualFixed/目标 2090`；
+    · 随温度变化：8 路 `yes` 压满载，目标 2116→2206→2253→2293→2333 单调上升，停止加热后受热惯性继续到 2368 再回落 2210；实际转速与目标误差 0–3 RPM；
+    · 崩溃返还：`kill -9` GUI 后 7 s 仍 `manualFixed`（helper 仍在写），第 8 s 租约到期转 `automatic`，转速回落 1000；
+    · 反推 die 温度：空闲约 57.5℃ / 满载约 64.6℃（均衡曲线 78 RPM/℃ 的斜率反算，与实测目标变化一致）。
   - Files: `FunFanCore/Control/{CommandGate,CurveAutomation,CurvePreset}.swift`, `FunFanCore/Rules/CurvePersistence.swift`, `FunFan/Stores/CurveStore.swift`, `FunFan/Views/CurveEditorView.swift`
   - 设计取舍：① 安全下限**优先于斜率限制**——95℃ 时不允许「慢慢爬」，必须立刻满转（`testSafetyFloorBeatsSlewRate` 钉死）；② 死区/重断言逻辑从 `RuleAutomation` 抽到 `ControlCommandGate`，规则与曲线共用，避免两条策略抖动行为分叉；③ 原生 bordered 按钮在离屏渲染下只能画出禁止符，新增 `FunFanButton` 自绘。
 

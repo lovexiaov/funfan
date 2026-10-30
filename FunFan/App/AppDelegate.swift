@@ -92,6 +92,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 self?.showSettingsWindow()
             }
         }
+
+        // 验收用：`FunFan --strategy curve` 启动即进入指定策略。
+        // 存在意义是让「策略接管」可被无人值守验证——切换后目标值可以直接
+        // 用 `funfanctl status` 读到，不必有人站在屏幕前点分段控件。
+        // 延迟 1.5 s 是为了等 bootstrap 把 XPC 连接建起来，否则首次 apply 会落空。
+        if let requested = Self.launchStrategy() {
+            let rpm = Self.launchRPM()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self else { return }
+                if let rpm { self.control.fixedRpm = rpm }
+                self.control.strategy = requested
+                NSLog("FunFan: 已按启动参数切到策略 \(requested.rawValue)")
+            }
+        }
+    }
+
+    // MARK: - 启动参数
+
+    /// 解析 `--strategy <automatic|fixed|curve|rules>`，非法值返回 `nil`（保持默认自动）。
+    private static func launchStrategy() -> ControlStore.Strategy? {
+        guard let index = CommandLine.arguments.firstIndex(of: "--strategy"),
+              CommandLine.arguments.indices.contains(index + 1) else { return nil }
+        return ControlStore.Strategy(rawValue: CommandLine.arguments[index + 1])
+    }
+
+    /// 解析 `--rpm <数值>`，仅在 `--strategy fixed` 时有意义。
+    private static func launchRPM() -> Double? {
+        guard let index = CommandLine.arguments.firstIndex(of: "--rpm"),
+              CommandLine.arguments.indices.contains(index + 1) else { return nil }
+        return Double(CommandLine.arguments[index + 1])
     }
 
     func applicationWillTerminate(_ notification: Notification) {

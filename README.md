@@ -49,6 +49,18 @@ make raw TYPE=ioft  # 按类型扫全表
 
 `funfanctl` 支持 `diagnose [--json] [--save]`、`doctor`、`status`、`spin`、`set`、`restore`、`raw`。有失败项时 `diagnose` 退出码为 2，便于脚本化回归。
 
+### 无人值守验收
+
+GUI 支持几个调试启动参数，用来在没有人在屏幕前的情况下验证策略接管（`funfanctl status` 是唯一观测面）：
+
+```bash
+./.build/debug/FunFan --strategy curve              # 启动即进入曲线策略
+./.build/debug/FunFan --strategy fixed --rpm 3000   # 固定转速
+./.build/debug/FunFan --curve-window                # 直接开曲线编辑窗口
+```
+
+`--strategy` 会在 bootstrap 完成 1.5 s 后生效，并把决定打进日志。验证时配合 `funfanctl status` 看「目标 / 模式」是否变化；`kill -9` 掉 GUI 后约 10 s 应自动回到 `automatic`（helper 租约看门狗）。
+
 ## 代码结构
 
 ```
@@ -101,6 +113,8 @@ Tests/          247 个单测
 M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、247 个单测全绿。
 
 策略四态（自动 / 固定 / 曲线 / 规则）全部可用，曲线与规则编辑器均已落地；设置窗口支持登录启动、菜单栏显示开关、一键自检与免责声明。
+
+曲线策略已在真机跑通端到端：接管后 `manualFixed`、目标随温度单调跟随（2116→2333）、实际转速误差 0–3 RPM、`kill -9` 后 8 s 由租约看门狗返还 `automatic`。规则策略的写入链路与曲线共用同一套下发路径。
 
 未完成：T16b 端到端合盖验证（需笔记本机型）、M6（签名 / 公证 / 打包）。
 
