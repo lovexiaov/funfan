@@ -262,6 +262,19 @@
   - 未验证：真实用户机器上的 Gatekeeper 放行流程（本机已放行过、隔离属性也清过，复现不出首次拦截）。
   - Files: `VERSION`, `release-notes/v1.0.0-alpha.1.md`, `README.md`
 
+- [x] 调研：Homebrew 发布可行性（2026-10-31）
+  - 结论：当前 adhoc 形态三条路全堵——官方 cask 2026-09-01 起强制签名+公证
+    （Homebrew 5.0 弃用、`--no-quarantine` 已移除，本机 brew 7.0.11 实测
+    help/manpage 0 匹配），adhoc+隔离在 Apple Silicon 弹「已损坏」；
+    自建 tap 撞同一堵墙；formula 免证书但 `funfanctl` 依赖特权 helper，无意义。
+    **前提决策：买不买 Developer ID（$99/年）**，不买则仅存档。
+  - 产出：`docs/HOMEBREW.md`（路线对比 / 政策依据 / tap 搭法 / cask 模板 /
+    行动清单）；待启用项：SMAppService daemon 的 cask 卸载路径需真机实测。
+  - Verify 实测：本机 Homebrew 7.0.11 上确认 quarantine 绕过参数已不存在；
+    官方文档（docs.brew.sh）逐页核对 Acceptable Casks / Package Acceptance
+    Policy / Tap-Trust / Tap 创建指南现行条文。
+  - Files: `docs/HOMEBREW.md`
+
 ---
 
 ## 完成判据（全量）
