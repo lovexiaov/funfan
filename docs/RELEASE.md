@@ -27,7 +27,7 @@ xcrun notarytool store-credentials funfan-notary \
 ## 1. 出包
 
 ```bash
-make test          # 268 个单测必须全绿
+make test          # 281 个单测必须全绿
 make notary-check  # 体检：缺什么会直接说，不猜
 make notarize      # 签名 → DMG → 公证 → 装订 → Gatekeeper 验收
 ```
@@ -44,7 +44,45 @@ make notarize      # 签名 → DMG → 公证 → 装订 → Gatekeeper 验收
 
 ---
 
-## 2. 发出去之前的人工验收
+## 2. 发 GitHub Release
+
+```bash
+make publish-dry        # 演练：单测 → 打包 → 打印将执行的 gh 命令，不创建 release
+make publish            # 真发：单测 → 签名/公证 → DMG + ZIP → 建「草稿」release
+```
+
+脚本是 `scripts/release.sh`，版本号取自 `VERSION`，tag 为 `v<版本>`。
+
+跑之前它会先挡掉下面这些情况（每条都直接说原因，不猜）：
+
+| 检查 | 为什么挡 |
+|---|---|
+| 不在 `main`、工作区不干净 | 发布的产物必须能对应到某个提交，否则出问题无法复现 |
+| 本地落后或领先 `origin/main` | 远端的 tag 会指向一个别人拉不到的提交 |
+| 本地或远端已有 `v<版本>` | 重发要走 `gh release upload --clobber`，不该静默覆盖已发布的产物 |
+| 没有 Developer ID 证书 / 公证凭据 | adhoc 包在别人机器上会被 Gatekeeper 直接拒，发出去等于废包 |
+
+`--allow-unsigned` 可以绕过最后一条，生成的是**内测包**：release notes 里会自动插入 `xattr -dr com.apple.quarantine` 的解除办法。
+
+**默认建草稿**（`--draft`），要在网页上核对附件和说明之后点 Publish。理由：Release 一旦公开，下载链接、release 页面和各类镜像立刻可见，撤回也会留痕，而这中间没有第二次机会给你换产物。想一步到位用 `--publish`。
+
+每次发三个附件：
+
+| 文件 | 给谁 |
+|---|---|
+| `FunFan-<版本>.dmg` | 人工下载，带「拖进应用程序」的引导 |
+| `FunFan-<版本>.zip` | 自动更新器（Sparkle 之类只认 zip 里的 `.app`，`ditto` 打包以保住签名） |
+| `SHA256SUMS.txt` | `shasum -a 256 -c SHA256SUMS.txt` |
+
+Release notes 由「上一个 tag 到 HEAD」的提交标题生成，外加固定的安装说明；`VERSION` 带 `-beta` 这类后缀时会自动标为预发布。想手写就 `--notes <文件>`：
+
+```bash
+./scripts/release.sh --notes release-notes/v1.1.0.md
+```
+
+---
+
+## 3. 发出去之前的人工验收
 
 在**另一台**（或至少把 `dist/` 清过、Gatekeeper 有真实上下文的）机器上：
 
@@ -54,11 +92,12 @@ make notarize      # 签名 → DMG → 公证 → 装订 → Gatekeeper 验收
 - [ ] 设置 → 风扇控制组件 → 安装 → 系统弹**一次**授权 → 状态变「已安装」；
 - [ ] 切「固定 3000 RPM」，`funfanctl status` 看到模式 `manualFixed`、目标 3000；
 - [ ] 退出 App，10 s 内 `funfanctl status` 回到 `automatic`；
-- [ ] 系统设置 → 通用 → 登录项与扩展：后台项显示在 FunFan 名下，可开关。
+- [ ] 系统设置 → 通用 → 登录项与扩展：后台项显示在 FunFan 名下，可开关；
+- [ ] 从 GitHub Release 页面下载的包与本地 `dist/` 里的 SHA-256 一致。
 
 ---
 
-## 3. 常见失败与处理
+## 4. 常见失败与处理
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
@@ -74,8 +113,10 @@ make notarize      # 签名 → DMG → 公证 → 装订 → Gatekeeper 验收
 
 ---
 
-## 4. 版本号
+## 5. 版本号
 
 - `VERSION` 文件是唯一来源（`CFBundleShortVersionString`）；
 - `CFBundleVersion` 取 `git rev-list --count HEAD`，单调递增、可复现，不用手填；
-- 发版前把 `VERSION` 改好并**单独提交一次**，让「版本号变更」在历史上可查。
+- 发版前把 `VERSION` 改好并**单独提交一次**，让「版本号变更」在历史上可查；
+- `make publish` 会按 `VERSION` 打 tag，所以**改版本号 → 提交 → 发布**是固定顺序，
+  不要在发布之后再补改 `VERSION`（那样 tag 与包内版本会不一致）。

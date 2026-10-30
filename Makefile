@@ -5,7 +5,7 @@
 
 SWIFT_FLAGS := --disable-sandbox
 
-.PHONY: help build release test run run-app app sign-info notarize notary-check dmg doctor diagnose raw status spin install-helper uninstall-helper clean
+.PHONY: help build release test run run-app app sign-info notarize notary-check dmg publish publish-dry doctor diagnose raw status spin install-helper uninstall-helper clean
 
 help:
 	@echo "FunFan 开发命令："
@@ -19,6 +19,8 @@ help:
 	@echo "  make notary-check       体检：证书 / 公证凭据 / 硬运行时，缺什么说什么"
 	@echo "  make notarize           Developer ID 签名 + 公证 + 装订 + Gatekeeper 验收"
 	@echo "  make dmg                打 dist/FunFan-<版本>.dmg（有证书就顺带签）"
+	@echo "  make publish            发 GitHub Release（草稿）：单测 → 签名/公证 → DMG+ZIP → gh release"
+	@echo "  make publish-dry        演练发布：跑到打包为止，只打印 gh 命令"
 	@echo "  make doctor             硬件诊断（只读）"
 	@echo "  make diagnose           系统信息采集：能力逐项实测 + 排查建议"
 	@echo "  make raw KEY=TR0Z       看原始字节与候选解码（也可 TYPE=ioft 扫全表）"
@@ -56,6 +58,12 @@ notarize:
 
 dmg: app
 	./scripts/make-dmg.sh
+
+publish:
+	./scripts/release.sh
+
+publish-dry:
+	./scripts/release.sh --dry-run
 
 doctor: release
 	./.build/release/funfanctl doctor

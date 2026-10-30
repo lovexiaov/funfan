@@ -25,7 +25,7 @@ git clone git@github.com:lovexiaov/funfan.git
 cd funfan
 
 make build        # 调试构建（含 CLI / helper / probe / GUI）
-make test         # 279 个单测
+make test         # 281 个单测
 make run          # 启动菜单栏 App
 ```
 
@@ -146,6 +146,17 @@ xcrun notarytool store-credentials funfan-notary \
 
 凭据名可用 `FUNFAN_NOTARY_PROFILE` 覆盖。**本机当前没有 Developer ID 证书**，所以公证链路只完成了失败路径与预检逻辑的验证（`make notary-check` 会准确报出缺证书、缺凭据），实际签名/公证/装订要在装好证书的机器上跑一遍才算验完。
 
+### 发到 GitHub Release
+
+```bash
+make publish-dry     # 演练：单测 → 打包 → 打印将执行的 gh 命令，不建 release
+make publish         # 真发：单测 → 签名/公证 → DMG + ZIP + SHA256SUMS → gh release
+```
+
+版本号取自 `VERSION`，tag 为 `v<版本>`；默认建**草稿**，在网页上核对完附件再点 Publish（`--publish` 直接公开）。附件三件套分别是给人下载的 DMG、给自动更新器的 zip、给校验用的 `SHA256SUMS.txt`。
+
+发布前会挡掉「工作区不干净 / 与远端不同步 / tag 已存在 / 没有 Developer ID」这几种情况——adhoc 包发出去别人装不上。要发内测包用 `--allow-unsigned`，release notes 里会自动带上解除隔离属性的命令。详见 [docs/RELEASE.md](docs/RELEASE.md)。
+
 ## 代码结构
 
 ```
@@ -164,7 +175,7 @@ FunFan/         SwiftUI 菜单栏 App
 FunFanCtl/      CLI（funfanctl）
 FunFanHelper/   特权 helper（XPC + 看门狗）
 FunFanProbe/    真机探针
-Tests/          268 个单测
+Tests/          281 个单测
 ```
 
 ## 几个真机上踩到的坑
@@ -197,7 +208,7 @@ Tests/          268 个单测
 
 ## 状态
 
-M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、279 个单测全绿。
+M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、281 个单测全绿。
 
 策略四态（自动 / 固定 / 曲线 / 规则）全部可用，曲线与规则编辑器均已落地；设置窗口支持登录启动、菜单栏显示开关、一键自检与免责声明。
 
