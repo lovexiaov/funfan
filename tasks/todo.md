@@ -149,7 +149,13 @@
   - Acceptance: `RulesView` 增删改规则（作用对象/取值方式/比较/阈值/动作/迟滞）；`RulesStore` 读写 `~/Library/Application Support/FunFan/rules.json` 并即时持久化；首启写入两条保守模板（默认不接管）。
   - Verify: `RulePersistenceTests`(12) + `RuleAutomationTests`(11) 绿；`rules.json` 落盘内容正确；真实截图核查规则窗口（标题/总开关/两条规则/条件动作摘要/行内控件）无截断重叠。
   - Files: `FunFan/Views/RulesView.swift`, `FunFan/Stores/RulesStore.swift`, `FunFanCore/Rules/RulePersistence.swift`
-- [ ] T14b: 实现 CurveEditorView + SettingsView（下一增量）
+- [x] T14b: CurveEditorView + 曲线策略（温度→转速连续调速）
+  - Acceptance: 曲线可拖拽编辑（控制点不可越过邻居、步进 0.5℃/10 RPM）；安全下限以红色区域可视化且拖不进去；静音/均衡/性能三档预设按机型区间自适应；编辑即时落盘 `curve.json`；切到曲线策略后按当前温度持续接管。
+  - Verify: `CommandGateTests`(7) + `CurveAutomationTests`(8) + `CurvePersistenceTests`/`CurvePresetTests`(16) 全绿，总计 247；离屏渲染核查曲线窗口（网格/折线/控制点/安全下限/预设/底部工具栏无截断重叠）；Popover 四态分段（自动/固定/曲线/规则）在 320pt 下不截断。
+  - Files: `FunFanCore/Control/{CommandGate,CurveAutomation,CurvePreset}.swift`, `FunFanCore/Rules/CurvePersistence.swift`, `FunFan/Stores/CurveStore.swift`, `FunFan/Views/CurveEditorView.swift`
+  - 设计取舍：① 安全下限**优先于斜率限制**——95℃ 时不允许「慢慢爬」，必须立刻满转（`testSafetyFloorBeatsSlewRate` 钉死）；② 死区/重断言逻辑从 `RuleAutomation` 抽到 `ControlCommandGate`，规则与曲线共用，避免两条策略抖动行为分叉；③ 原生 bordered 按钮在离屏渲染下只能画出禁止符，新增 `FunFanButton` 自绘。
+
+- [ ] T14c: SettingsView（设置窗口：登录启动 / 菜单栏显示 / doctor / 免责声明）
 - [ ] T16b: 合盖检测 + 端到端规则自动调速验证（需先装 helper）
   - [x] 合盖检测：`LidPolicy`（判据纯函数，4 组单测）+ `LidMonitor`（在线显示列表 + 屏幕变化通知）+ `ControlStore.suspendForLid/resumeAfterLid`
   - [x] helper 安装：`scripts/install-helper.sh` 增加安装后 `codesign --force --sign -`（SPM 直出的 linker-signed 签名会被 launchd 拒绝，报 `Bootstrap failed: 5`）

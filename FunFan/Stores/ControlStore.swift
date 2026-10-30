@@ -13,6 +13,7 @@ final class ControlStore: ObservableObject {
     enum Strategy: String, CaseIterable, Identifiable {
         case automatic
         case fixed
+        case curve
         case rules
 
         var id: String { rawValue }
@@ -21,8 +22,14 @@ final class ControlStore: ObservableObject {
             switch self {
             case .automatic: return "自动"
             case .fixed: return "固定"
+            case .curve: return "曲线"
             case .rules: return "规则"
             }
+        }
+
+        /// 是否由本应用持续计算目标（需要更快的采样与规则/曲线引擎）。
+        var isAutomated: Bool {
+            self == .curve || self == .rules
         }
     }
 
@@ -42,7 +49,7 @@ final class ControlStore: ObservableObject {
     @Published var strategy: Strategy = .automatic {
         didSet {
             guard strategy != oldValue else { return }
-            if oldValue == .rules { teardownRules() }
+            if oldValue.isAutomated { teardownAutomation() }
             mirroredStrategy = strategy
             apply()
         }
@@ -57,8 +64,10 @@ final class ControlStore: ObservableObject {
 
     /// 当前处于触发状态的规则（UI 高亮用）。
     @Published private(set) var triggeredRuleIDs: [UUID] = []
-    /// 规则引擎当前下发的目标（nil = 未触发）。
+    /// 规则/曲线引擎当前下发的目标（nil = 未接管）。
     @Published private(set) var automatedRpm: Double?
+    /// 曲线本身给出的目标（未过安全下限），用于编辑器里显示「你画的 vs 实际下发的」。
+    @Published private(set) var curveRawRpm: Double?
 
     // MARK: - 内部
 
@@ -75,6 +84,13 @@ final class ControlStore: ObservableObject {
     /// 规则来源（由 `RulesStore` 提供，线程安全方法）。
     private var rulesProvider: (() -> [FanRule])?
     private var automation = RuleAutomation()
+
+    /// 曲线来源（由 `CurveStore` 提供，线程安全方法）。
+    private var curveProvider: (() -> FanCurve)?
+    private var curveAutomation = CurveAutomation(curve: FanCurve(points: []))
+
+    /// 上一次快照时间：曲线引擎的斜率限制需要「距上次多少秒」。
+    private var lastSnapshotAt: Date?
 
     /// 合盖期间挂起：返还系统自动，并拦住规则重新接管（只在控制队列上读写）。
     private var suspendedForLid = false
@@ -124,6 +140,11 @@ final class ControlStore: ObservableObject {
         rulesProvider = provider
     }
 
+    /// 绑定曲线来源（通常传 `curve.currentCurve`）。
+    func bindCurve(_ provider: @escaping () -> FanCurve) {
+        curveProvider = provider
+    }
+
     // MARK: - 下发
 
     /// 按当前策略下发。helper 不可用时只提示，不发请求。
@@ -167,6 +188,13 @@ final class ControlStore: ObservableObject {
                     DispatchQueue.main.async {
                         self.message = "规则监控中，温度越阈值时自动提速"
                     }
+
+                case .curve:
+                    // 曲线同理：曲线一定有值，但仍然等真正的温度快照，
+                    // 避免用「上一次的温度」或猜测值写一次硬件。
+                    DispatchQueue.main.async {
+                        self.message = "曲线接管中，按当前温度映射转速"
+                    }
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -182,61 +210,101 @@ final class ControlStore: ObservableObject {
     func handleSnapshot(_ snapshot: SensorSnapshot, fanIndex: Int = 0) {
         queue.async { [weak self] in
             guard let self else { return }
-            // 只有规则策略才评估；其余策略下不做任何多余计算
-            guard self.mirroredStrategy == .rules else { return }
+            // 只有自动化策略才评估；自动/固定下不做任何多余计算
+            guard self.mirroredStrategy.isAutomated else { return }
             guard !self.suspendedForLid else { return }
             guard self.mirroredHelperReady, let controller = self.controller else { return }
 
-            let rules = self.rulesProvider?() ?? []
-            let command = self.automation.update(
-                snapshot: snapshot,
-                rules: rules,
-                limits: self.mirroredLimits,
-                now: Date()
-            )
+            let now = Date()
+            let die = snapshot.readings.map(\.celsius).max()
 
-            let triggered = self.automation.triggeredRuleIDs
-            let automated = self.automation.lastCommandedRpm
-            DispatchQueue.main.async {
-                self.triggeredRuleIDs = triggered
-                self.automatedRpm = automated
-            }
+            switch self.mirroredStrategy {
+            case .curve:
+                // 斜率限制需要真实间隔；首帧或处理策略切换后按 1 s 处理（曲线引擎首帧本就直达）
+                let elapsed = self.lastSnapshotAt.map { now.timeIntervalSince($0) } ?? 1
+                self.lastSnapshotAt = now
 
-            guard let command else { return }
-
-            do {
-                switch command {
-                case .setRpm(let rpm):
-                    _ = try controller.refreshState(fanIndex: fanIndex)
-                    _ = try controller.setTarget(rpm: rpm, fanIndex: fanIndex)
-                    self.startHeartbeat()
-                    DispatchQueue.main.async {
-                        self.isManual = true
-                        self.message = String(format: "规则接管：%.0f RPM", rpm)
-                    }
-
-                case .release:
-                    try controller.restoreAuto(fanIndex: fanIndex)
-                    self.stopHeartbeat()
-                    DispatchQueue.main.async {
-                        self.isManual = false
-                        self.message = "规则未触发，已返还系统自动"
-                    }
-                }
-            } catch {
+                let curve = self.curveProvider?() ?? FanCurve(points: [])
+                let command = self.curveAutomation.update(
+                    curve: curve,
+                    dieCelsius: die,
+                    limits: self.mirroredLimits,
+                    secondsElapsed: elapsed,
+                    now: now
+                )
+                let raw = self.curveAutomation.rawCurveRpm
+                let commanded = self.curveAutomation.lastCommandedRpm
                 DispatchQueue.main.async {
-                    self.message = Self.describe(error)
+                    self.curveRawRpm = raw
+                    self.automatedRpm = commanded
                 }
+                self.execute(command, label: "曲线", controller: controller, fanIndex: fanIndex)
+
+            case .rules:
+                let rules = self.rulesProvider?() ?? []
+                let command = self.automation.update(
+                    snapshot: snapshot,
+                    rules: rules,
+                    limits: self.mirroredLimits,
+                    now: now
+                )
+                let triggered = self.automation.triggeredRuleIDs
+                let automated = self.automation.lastCommandedRpm
+                DispatchQueue.main.async {
+                    self.triggeredRuleIDs = triggered
+                    self.automatedRpm = automated
+                }
+                self.execute(command, label: "规则", controller: controller, fanIndex: fanIndex)
+
+            case .automatic, .fixed:
+                return
             }
         }
     }
 
-    /// 离开规则策略：解除接管并清空迟滞状态。
-    private func teardownRules() {
+    /// 把闸门给出的命令落到硬件，并同步 UI 状态。规则与曲线共用。
+    private func execute(
+        _ command: ControlCommandGate.Command?,
+        label: String,
+        controller: FanController,
+        fanIndex: Int
+    ) {
+        guard let command else { return }
+
+        do {
+            switch command {
+            case .setRpm(let rpm):
+                _ = try controller.refreshState(fanIndex: fanIndex)
+                _ = try controller.setTarget(rpm: rpm, fanIndex: fanIndex)
+                startHeartbeat()
+                DispatchQueue.main.async {
+                    self.isManual = true
+                    self.message = String(format: "%@接管：%.0f RPM", label, rpm)
+                }
+
+            case .release:
+                try controller.restoreAuto(fanIndex: fanIndex)
+                stopHeartbeat()
+                DispatchQueue.main.async {
+                    self.isManual = false
+                    self.message = "\(label)未接管，已返还系统自动"
+                }
+            }
+        } catch {
+            DispatchQueue.main.async {
+                self.message = Self.describe(error)
+            }
+        }
+    }
+
+    /// 离开自动化策略：解除接管并清空迟滞/斜率状态。
+    private func teardownAutomation() {
         queue.async { [weak self] in
             guard let self else { return }
-            let wasActive = self.automation.isActive
+            let wasActive = self.automation.isActive || self.curveAutomation.isActive
             self.automation.reset()
+            self.curveAutomation.reset()
+            self.lastSnapshotAt = nil
             if wasActive, let controller = self.controller {
                 try? controller.restoreAuto(fanIndex: 0)
             }
@@ -245,6 +313,7 @@ final class ControlStore: ObservableObject {
                 self.isManual = false
                 self.triggeredRuleIDs = []
                 self.automatedRpm = nil
+                self.curveRawRpm = nil
             }
         }
     }
@@ -254,6 +323,8 @@ final class ControlStore: ObservableObject {
         queue.async { [weak self] in
             guard let self, let controller = self.controller else { return }
             self.automation.reset()
+            self.curveAutomation.reset()
+            self.lastSnapshotAt = nil
             self.stopHeartbeat()
             try? controller.restoreAuto(fanIndex: 0)
         }
@@ -261,6 +332,7 @@ final class ControlStore: ObservableObject {
             self.isManual = false
             self.triggeredRuleIDs = []
             self.automatedRpm = nil
+            self.curveRawRpm = nil
         }
     }
 
@@ -275,6 +347,8 @@ final class ControlStore: ObservableObject {
             guard let self, !self.suspendedForLid else { return }
             self.suspendedForLid = true
             self.automation.reset()
+            self.curveAutomation.reset()
+            self.lastSnapshotAt = nil
             self.stopHeartbeat()
             if let controller = self.controller {
                 try? controller.restoreAuto(fanIndex: 0)
@@ -283,6 +357,7 @@ final class ControlStore: ObservableObject {
                 self.isManual = false
                 self.triggeredRuleIDs = []
                 self.automatedRpm = nil
+                self.curveRawRpm = nil
                 self.message = self.suspendedMessage
             }
         }
@@ -300,6 +375,12 @@ final class ControlStore: ObservableObject {
         case .fixed:
             DispatchQueue.main.async { self.message = "已开盖，恢复固定转速" }
             apply()
+        case .curve:
+            queue.async { [weak self] in
+                self?.curveAutomation.reset()
+                self?.lastSnapshotAt = nil
+                DispatchQueue.main.async { self?.message = "已开盖，曲线恢复接管" }
+            }
         case .rules:
             queue.async { [weak self] in
                 self?.automation.reset()
@@ -324,6 +405,7 @@ final class ControlStore: ObservableObject {
                 // 租约已失效：helper 已自行返还，GUI 侧同步状态
                 self.stopHeartbeat()
                 self.automation.noteExternallyReleased()
+                self.curveAutomation.noteExternallyReleased()
                 DispatchQueue.main.async {
                     self.isManual = false
                     self.strategy = .automatic

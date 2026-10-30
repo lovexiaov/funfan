@@ -116,8 +116,15 @@ FunFan/
 │   ├── Control/
 │   │   ├── FanController.swift     # 经 transport 下发（本地预检 + 缓存上下限）
 │   │   ├── CurveEngine.swift       # 曲线插值、迟滞、斜率
+│   │   ├── CurvePreset.swift       # 静音/均衡/性能预设（按占比定义，自适应机型区间）
+│   │   ├── CurveAutomation.swift   # 曲线 → 安全下限 → 命令闸门
 │   │   ├── RuleEngine.swift        # 规则评估：阈值/比较/迟滞/冲突取最大 RPM（含 FanRule 模型）
+│   │   ├── RuleAutomation.swift    # 规则 → 命令闸门
+│   │   ├── CommandGate.swift       # 死区/10 s 重断言/解除只发一次（规则与曲线共用）
 │   │   └── SafetyPolicy.swift      # 动态下限、clamp、isValidTarget
+│   ├── Rules/
+│   │   ├── RulePersistence.swift   # rules.json 原子写 + 损坏降级 + 读时清洗
+│   │   └── CurvePersistence.swift  # curve.json 原子写 + 几何清洗（不足 2 点视为无效）
 │   ├── XPC/
 │   │   └── FanControlContract.swift # 请求/应答/FanState/错误 payload + transport 协议
 │   └── Types/                      # 错误类型、模型（Curve/Preset）

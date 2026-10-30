@@ -192,11 +192,16 @@ FunFanHelper/      HelperMain · XPCService · LaunchDaemon.plist
 | 规则列表容器 | `ScrollView + VStack` | 惰性容器（`LazyVStack`）在离屏渲染下不填充内容，不利于走查；规则数量级很小，用 `VStack` 无损性能 |
 | 规则窗口入口 | Popover 内「编辑规则…」→ 独立 `NSWindow` | 遵循已确认决策 H2 |
 | Popover 底部「诊断」按钮（**设计稿没有**） | `Views/MenuBarView.swift` footer 内、位于「退出」左侧 | 新增：能力出错时用户要能一键导出系统信息（机型/系统/SMC 能力逐项实测 + 排查建议）。样式沿用 footer 现有的 10 pt `.plain` 次级按钮，不引入新控件；同时 footer 左侧文案在复制后临时替换为「已复制诊断信息」，不新增行高 |
+| 曲线屏：可拖拽折线 + 安全下限 | `Views/CurveEditorView.swift`（自绘 `Path` + `Circle` 控制点） | 用 `SwiftUI` 基础图形重画而不是引入 Canvas/第三方图表：① 控制点需要逐个命中拖拽（22 pt 半径），Path + 手势最直接；② 安全下限画成**红色带 + 虚线**——「拖不进去的区域」可视化比一行说明文字有效得多 |
+| 曲线屏：三档预设按钮 | 自绘（`RoundedRectangle` 背景 + 选中描边） | 与 `StrategySegmented` 同源：原生 bordered 按钮在 `ImageRenderer` 下只画得出黄底禁止符，走查拿不到真实布局 |
+| 曲线屏底部工具栏按钮 | `Views/Components.swift` → `FunFanButton`（新增） | 同上。原生 `.bordered` + `.controlSize(.small)` 无法离屏渲染；自绘后视觉与截图都可控，且样式与 Popover 现有次级按钮一致 |
+| 分段控件扩成四态（自动/固定/**曲线**/规则） | `ControlStore.Strategy` 增加 `.curve` | 曲线是独立策略而非规则的一种：规则是「命中才提速、否则返还」，曲线是「一直按映射给目标」，混在一起会让用户无法预期。320 pt 宽下四段标签（各 2 字）实测不截断 |
 
 **设计走查方法**
 ```
 swift build --disable-sandbox
 ./.build/debug/FunFan --render rules    /tmp/rules.png  --scale 3
+./.build/debug/FunFan --render curve    /tmp/curve.png  --scale 3
 ./.build/debug/FunFan --render popover  /tmp/pop.png    --scale 3
 ./.build/debug/FunFan --render editor   /tmp/editor.png --scale 3
 ```

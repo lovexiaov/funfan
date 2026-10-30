@@ -11,10 +11,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let monitor = MonitorStore()
     private let control = ControlStore()
     private let rules = RulesStore()
+    private let curve = CurveStore()
     private let lid = LidMonitor()
     private let diagnostics = DiagnosticsStore()
 
     private var rulesWindow: NSWindow?
+    private var curveWindow: NSWindow?
     private var popoverVisible = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -32,13 +34,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self?.updateTitle(cpu: cpu)
         }
 
-        // 规则自动化接线：每帧快照 → 控制层评估 → 必要时经 XPC 下发
+        // 规则/曲线自动化接线：每帧快照 → 控制层评估 → 必要时经 XPC 下发
         control.bindRules { [weak self] in self?.rules.currentRules() ?? [] }
+        control.bindCurve { [weak self] in self?.curve.currentCurve() ?? FanCurve(points: []) }
         monitor.onSnapshot = { [weak self] snapshot in
             self?.control.handleSnapshot(snapshot)
         }
 
-        // 规则策略需要更快的采样（1 s），其余情况沿用菜单栏档位
+        // 真实风扇区间到达后，按机型重排预设曲线（自定义曲线不受影响）
+        control.$limits
+            .sink { [weak self] limits in self?.curve.updateLimits(limits) }
+            .store(in: &cancellables)
+
+        // 自动化策略需要更快的采样（1 s），其余情况沿用菜单栏档位
         control.$strategy
             .sink { [weak self] _ in self?.refreshVisibility() }
             .store(in: &cancellables)
@@ -58,10 +66,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         monitor.start()
         control.bootstrap()
 
-        // 调试/验收用：`FunFan --rules-window` 直接打开规则窗口，省去点菜单栏
+        // 调试/验收用：`FunFan --rules-window` / `--curve-window` 直接开窗，省去点菜单栏
         if CommandLine.arguments.contains("--rules-window") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 self?.showRulesWindow()
+            }
+        }
+        if CommandLine.arguments.contains("--curve-window") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.showCurveWindow()
             }
         }
     }
@@ -110,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 control: control,
                 diagnostics: diagnostics,
                 onOpenRules: { [weak self] in self?.showRulesWindow() },
+                onOpenCurve: { [weak self] in self?.showCurveWindow() },
                 onQuit: { NSApp.terminate(nil) }
             )
         )
@@ -135,12 +149,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         refreshVisibility()
     }
 
-    /// 采样频率：面板打开 > 规则接管 > 仅菜单栏。
+    /// 采样频率：面板打开 > 自动化接管（规则/曲线）> 仅菜单栏。
     private func refreshVisibility() {
         let visibility: SamplingPolicy.Visibility
         if popoverVisible {
             visibility = .popoverOpen
-        } else if control.strategy == .rules {
+        } else if control.strategy.isAutomated {
             visibility = .automation
         } else {
             visibility = .menuBarOnly
@@ -170,6 +184,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         rulesWindow = window
+    }
+
+    // MARK: - 曲线窗口
+
+    private func showCurveWindow() {
+        if let window = curveWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let hosting = NSHostingController(
+            rootView: CurveEditorView(store: curve, control: control, monitor: monitor)
+        )
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "FunFan · 温度曲线"
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.isReleasedWhenClosed = false
+        window.setContentSize(NSSize(width: 640, height: 540))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        curveWindow = window
     }
 
     // MARK: - 系统事件

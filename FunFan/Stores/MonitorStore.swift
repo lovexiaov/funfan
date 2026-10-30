@@ -33,6 +33,8 @@ final class MonitorStore: ObservableObject {
     @Published private(set) var gpuAverage: Double?
     @Published private(set) var ssdAverage: Double?
     @Published private(set) var ambientAverage: Double?
+    /// 全部传感器中的最高温——曲线/规则用的「芯片温度」就是它（与 `RuleEngine` 一致）。
+    @Published private(set) var hottestCelsius: Double?
     @Published private(set) var coreGroups: [CoreGroup] = []
     @Published private(set) var battery: BatteryState = .absent
     @Published private(set) var lastSample: Date?
@@ -149,6 +151,7 @@ final class MonitorStore: ObservableObject {
         let gpu = snapshot.averageGPU()
         let ssd = snapshot.average(for: .ssd)
         let ambient = snapshot.average(for: .ambient)
+        let hottest = snapshot.readings.map(\.celsius).max()
         let count = snapshot.readings.count
 
         // 规则评估用原始快照：在监控队列上同步回调，避免额外线程切换。
@@ -162,6 +165,7 @@ final class MonitorStore: ObservableObject {
             self.gpuAverage = gpu
             self.ssdAverage = ssd
             self.ambientAverage = ambient
+            self.hottestCelsius = hottest
             self.coreGroups = groups
             self.battery = battery
             self.lastSample = snapshot.timestamp

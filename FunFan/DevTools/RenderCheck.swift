@@ -56,6 +56,15 @@ enum RenderCheck {
                     onCancel: {}
                 )
             )
+        case "curve":
+            let curveFile = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("funfan-render-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("curve.json")
+            let store = CurveStore(
+                persistence: CurvePersistence(fileURL: curveFile),
+                limits: FanLimits(minRpm: 1000, maxRpm: 4900)
+            )
+            content = AnyView(CurveEditorView(store: store, control: control, monitor: monitor))
         case "scrolltest":
             content = AnyView(VStack(spacing: 12) {
                 Text("A: plain text visible")
@@ -68,7 +77,7 @@ enum RenderCheck {
             content = AnyView(
                 MenuBarView(
                     monitor: monitor, control: control, diagnostics: DiagnosticsStore(),
-                    onOpenRules: {}, onQuit: {}
+                    onOpenRules: {}, onOpenCurve: {}, onQuit: {}
                 )
                     .background(Color(nsColor: .windowBackgroundColor))
             )

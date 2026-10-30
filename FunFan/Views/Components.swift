@@ -97,11 +97,53 @@ struct FunFanToggle: View {
 
 // MARK: - 文案辅助
 
+/// 小号按钮（替代 `.bordered` + `.controlSize(.small)`）。
+///
+/// 原生 bordered 按钮是 AppKit 宿主控件：`ImageRenderer` 离屏渲染时只能画出一块
+/// 黄底禁止符，设计走查拿不到真实布局（和 `StrategySegmented` / `FunFanToggle`
+/// 当初被自建是同一个原因）。自绘后视觉与截图都可控。
+struct FunFanButton: View {
+
+    let title: String
+    var systemImage: String?
+    var isEnabled: Bool = true
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 10, weight: .medium))
+                }
+                Text(title)
+                    .font(.system(size: 11))
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(isEnabled ? 0.09 : 0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(isEnabled ? 0.14 : 0.06), lineWidth: 0.5)
+            )
+            .foregroundStyle(isEnabled ? Color.primary : Color.secondary.opacity(0.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel(title)
+    }
+}
+
 extension ControlStore.Strategy {
     var help: String {
         switch self {
         case .automatic: return "完全交给 macOS 控制风扇"
         case .fixed: return "固定在一个转速"
+        case .curve: return "按温度曲线连续调速（永远不会低于安全下限）"
         case .rules: return "按温度规则自动提速（不会低于系统默认下限）"
         }
     }

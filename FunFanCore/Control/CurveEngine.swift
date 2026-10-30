@@ -67,6 +67,15 @@ public struct CurveEngine {
         self.hysteresisCelsius = hysteresisCelsius
     }
 
+    /// 清空历史输出（切换策略 / 唤醒 / 用户手动接管后调用）。
+    ///
+    /// 必须清：否则重新接管时会把「上次的转速」当成起点，从旧值缓慢爬向新目标，
+    /// 用户会看到「切到曲线模式后风扇过了十几秒才动」。
+    public mutating func reset() {
+        lastOutput = nil
+        referenceCelsius = nil
+    }
+
     /// 推进一个周期，返回本周期目标转速（未经 `SafetyPolicy` clamp）。
     ///
     /// - Parameters:

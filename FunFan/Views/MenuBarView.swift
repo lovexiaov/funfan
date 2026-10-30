@@ -8,6 +8,7 @@ struct MenuBarView: View {
     @ObservedObject var control: ControlStore
     @ObservedObject var diagnostics: DiagnosticsStore
     var onOpenRules: () -> Void
+    var onOpenCurve: () -> Void
     var onQuit: () -> Void
 
     @State private var showCores = false
@@ -250,6 +251,10 @@ struct MenuBarView: View {
                 rulesStatus
             }
 
+            if control.strategy == .curve {
+                curveStatus
+            }
+
             if let message = control.message {
                 Text(message)
                     .font(.system(size: 10))
@@ -287,6 +292,35 @@ struct MenuBarView: View {
             Spacer(minLength: 0)
 
             Button("编辑规则…") { onOpenRules() }
+                .buttonStyle(.plain)
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.accent)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(cardBackground)
+    }
+
+    /// 曲线模式摘要：曲线一定会给目标，所以只需说明「现在在按曲线跑」。
+    private var curveStatus: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(control.automatedRpm != nil ? Theme.accent : Color.secondary.opacity(0.5))
+                .frame(width: 6, height: 6)
+
+            if let rpm = control.automatedRpm {
+                Text(String(format: "曲线接管中 · %.0f RPM", rpm))
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Theme.accent)
+            } else {
+                Text("曲线待采样 · 首帧后接管")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Button("编辑曲线…") { onOpenCurve() }
                 .buttonStyle(.plain)
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.accent)

@@ -2,20 +2,15 @@ import Foundation
 
 /// 把「规则评估」翻译成「是否需要真的发一次 XPC」。
 ///
-/// 为什么需要这一层：规则每 0.5 s 评估一次，但硬件写入不能每 0.5 s 发一次——
-/// 既浪费 IPC，也会让 helper 的租约看门狗与日志被刷屏。这里做三件事：
-/// 1. **死区**：目标变化小于 `deadbandRpm` 不发（避免 1 RPM 抖动）；
-/// 2. **重断言**：即使目标不变，每 `refreshInterval` 秒也重发一次
-///    （`thermalmonitord` 可能在后台把模式改回自动，需要周期性夺回）；
-/// 3. **解除只发一次**：从「有目标」变「无目标」时发一次 `.release`，之后保持沉默。
+/// 死区 / 重断言 / 解除只发一次这三件事已抽到 `ControlCommandGate`，
+/// 与曲线自动化共用同一套判定，避免两条策略在抖动行为上悄悄分叉。
 ///
+/// 本类型只负责：把 `SensorSnapshot` + 规则集喂给引擎，再把引擎给出的目标交给闸门。
 /// 纯逻辑、时间由外部注入 → 可完整单测，不依赖真实时钟。
 public struct RuleAutomation {
 
-    public enum Command: Equatable, Sendable {
-        case setRpm(Double)
-        case release
-    }
+    /// 命令类型与曲线自动化共用。
+    public typealias Command = ControlCommandGate.Command
 
     public struct Config: Equatable, Sendable {
         /// 目标变化死区（RPM）。
@@ -32,26 +27,31 @@ public struct RuleAutomation {
     public let config: Config
 
     /// 最近一次已下发的目标（nil = 当前不接管）。
-    public private(set) var lastCommandedRpm: Double?
+    public var lastCommandedRpm: Double? { gate.lastCommandedRpm }
     /// 本次处于触发状态的规则（供 UI 高亮）。
     public private(set) var triggeredRuleIDs: [UUID] = []
     /// 用于安全下限的芯片温度。
     public private(set) var dieCelsius: Double?
 
     private var engine = RuleEngine()
-    private var lastSentAt: Date?
+    private var gate: ControlCommandGate
 
     public init(config: Config = Config()) {
         self.config = config
+        self.gate = ControlCommandGate(
+            config: ControlCommandGate.Config(
+                deadbandRpm: config.deadbandRpm,
+                refreshInterval: config.refreshInterval
+            )
+        )
     }
 
-    public var isActive: Bool { lastCommandedRpm != nil }
+    public var isActive: Bool { gate.isActive }
 
     /// 清空状态（切换策略、唤醒、用户手动接管后调用）。
     public mutating func reset() {
         engine.reset()
-        lastCommandedRpm = nil
-        lastSentAt = nil
+        gate.reset()
         triggeredRuleIDs = []
         dieCelsius = nil
     }
@@ -71,28 +71,11 @@ public struct RuleAutomation {
         triggeredRuleIDs = evaluation.triggeredRuleIDs
         dieCelsius = evaluation.dieCelsius
 
-        guard let target = evaluation.commandedRpm else {
-            if lastCommandedRpm != nil {
-                lastCommandedRpm = nil
-                lastSentAt = nil
-                return .release
-            }
-            return nil
-        }
-
-        let changed = lastCommandedRpm.map { abs($0 - target) > config.deadbandRpm } ?? true
-        let expired = lastSentAt.map { now.timeIntervalSince($0) >= config.refreshInterval } ?? true
-
-        guard changed || expired else { return nil }
-
-        lastCommandedRpm = target
-        lastSentAt = now
-        return .setRpm(target)
+        return gate.update(target: evaluation.commandedRpm, now: now)
     }
 
     /// 外部（如 helper 租约过期）通知「已经不再接管」时同步内部状态。
     public mutating func noteExternallyReleased() {
-        lastCommandedRpm = nil
-        lastSentAt = nil
+        gate.noteExternallyReleased()
     }
 }
