@@ -6,6 +6,7 @@ import FunFanCore
 //
 // 职责：
 //   doctor   诊断：权限、风扇、模式键、解锁键、键类型、当前值
+//   topology 打印芯片真实核心数（P/E/GPU，来自 sysctl/IORegistry）
 //   status   只读状态（不需要 root）
 //   spin     写入验证：设目标 → 采样 F0Ac → 自动返还系统自动（需要 root）
 //   set      保持手动（需要 root，务必随后 restore）
@@ -57,6 +58,7 @@ func usage() {
                                          系统信息采集：逐项能力实测 + 排查建议
                                          （--json 机读、--save 落盘，有失败项时退出码 2）
       funfanctl doctor                   诊断硬件与权限（只读）
+      funfanctl topology                打印芯片真实核心数（P/E/GPU，来自 sysctl/IORegistry）
       funfanctl raw <KEY>... | --type <T> 打印原始字节与候选解码（未支持类型取证）
       funfanctl status                   当前风扇状态（只读）
       funfanctl spin [--rpm N] [--seconds N] [--fan N]
@@ -172,6 +174,22 @@ func runDoctor() {
 
     out("")
     out("结论：\(isRoot ? "具备写入条件，可以执行 sudo funfanctl spin 验证" : "仅可监控；写入需 sudo")")
+}
+
+// MARK: - topology
+
+/// 打印芯片真实核心数（来自 sysctl / IORegistry，不是 SMC 温度键倒推）。
+/// 用于核对「展开面板里的 CPU/GPU 个数」是否与系统接口一致。
+func runTopology() {
+    let probe = SystemTopologyProbe()
+    guard let topo = probe.read() else {
+        err("✗ 无法读取芯片拓扑（sysctl / IORegistry 均不可用）。")
+        exit(1)
+    }
+    out("=== 芯片真实拓扑（核心数来自系统接口，非 SMC 倒推） ===")
+    out("芯片：\(topo.chipName)")
+    out("CPU：\(topo.totalCPUCores) 核（性能 \(topo.performanceCores) + 能效 \(topo.efficiencyCores)）")
+    out("GPU：\(topo.gpuCores) 核")
 }
 
 /// 幂等写入探测：写入当前已有的目标值，不改变任何行为。
@@ -521,6 +539,7 @@ switch command {
 case "diagnose": runDiagnose(args: args)
 case "raw":     runRaw(args: args)
 case "doctor":  runDoctor()
+case "topology": runTopology()
 case "status":  runStatus()
 case "spin":    runSpin(args: args)
 case "set":     runSet(args: args)
