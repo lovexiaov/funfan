@@ -107,7 +107,7 @@ public enum HelperPaths {
     public static let log = "/var/log/com.funfan.helper.log"
 }
 
-/// `sysctl` 字符串读取（失败返回 nil，不抛错）。
+/// `sysctl` 读取（失败返回 nil，不抛错）。
 enum Sysctl {
     static func string(_ name: String) -> String? {
         var size = 0
@@ -115,5 +115,13 @@ enum Sysctl {
         var buffer = [CChar](repeating: 0, count: size)
         guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
         return String(cString: buffer)
+    }
+
+    /// 整型 sysctl（如 `hw.perflevel0.physicalcpu`）。失败或大小异常返回 nil。
+    static func int(_ name: String) -> Int? {
+        var value: Int = 0
+        var size = MemoryLayout<Int>.size
+        guard sysctlbyname(name, &value, &size, nil, 0) == 0 else { return nil }
+        return value
     }
 }
