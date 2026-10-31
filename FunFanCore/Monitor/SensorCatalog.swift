@@ -15,16 +15,20 @@ public enum SensorCatalog {
     }
 
     /// 内置逐代密钥表（持续补充）。键必须 4 字符。
+    ///
+    /// `name` 仅作语义标签；CPU/GPU 的逐核键直接以真实键名作标签——
+    /// 这些 SMC 温度是「探测点」而非「核」，UI 展示时用 `descriptor.key`，
+    /// 核心数另由系统接口（见 `ChipTopology`）提供，绝不从这里数。
     private static let table: [String: Entry] = [
-        "Tp01": Entry(name: "P-Core 0", category: .cpu, subcluster: .performance),
-        "Tp09": Entry(name: "P-Core 1", category: .cpu, subcluster: .performance),
-        "Tp0O": Entry(name: "Super Cluster 0", category: .cpu, subcluster: .superCluster),
-        "Tf04": Entry(name: "P-Core 0", category: .cpu, subcluster: .performance),
-        "Tf09": Entry(name: "P-Core 1", category: .cpu, subcluster: .performance),
-        "Te05": Entry(name: "E-Core 0", category: .cpu, subcluster: .efficiency),
-        "Tg0G": Entry(name: "GPU Cluster 0", category: .gpu, subcluster: nil),
-        "Tg05": Entry(name: "GPU Cluster 0", category: .gpu, subcluster: nil),
-        "Tg0H": Entry(name: "GPU Cluster 1", category: .gpu, subcluster: nil),
+        "Tp01": Entry(name: "Tp01", category: .cpu, subcluster: .performance),
+        "Tp09": Entry(name: "Tp09", category: .cpu, subcluster: .performance),
+        "Tp0O": Entry(name: "Tp0O", category: .cpu, subcluster: .superCluster),
+        "Tf04": Entry(name: "Tf04", category: .cpu, subcluster: .performance),
+        "Tf09": Entry(name: "Tf09", category: .cpu, subcluster: .performance),
+        "Te05": Entry(name: "Te05", category: .cpu, subcluster: .efficiency),
+        "Tg0G": Entry(name: "Tg0G", category: .gpu, subcluster: nil),
+        "Tg05": Entry(name: "Tg05", category: .gpu, subcluster: nil),
+        "Tg0H": Entry(name: "Tg0H", category: .gpu, subcluster: nil),
         "TB0T": Entry(name: "Battery", category: .battery, subcluster: nil),
         "Ts0P": Entry(name: "SSD", category: .ssd, subcluster: nil),
         "TA0P": Entry(name: "Ambient", category: .ambient, subcluster: nil),
@@ -40,8 +44,7 @@ public enum SensorCatalog {
                 key: key,
                 name: entry.name,
                 category: entry.category,
-                subcluster: entry.subcluster,
-                isCoreLevel: true
+                subcluster: entry.subcluster
             )
         }
 

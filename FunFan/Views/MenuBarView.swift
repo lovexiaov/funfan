@@ -258,20 +258,20 @@ struct MenuBarView: View {
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
                     .foregroundStyle(Theme.color(forCelsius: group.average))
             }
-            if group.confirmedCores.isEmpty {
-                Text("（仅簇均温，未逐核确认）")
+            if group.sensors.isEmpty {
+                Text("（无传感器）")
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
             } else {
-                ForEach(Array(group.confirmedCores.enumerated()), id: \.offset) { _, core in
+                ForEach(Array(group.sensors.enumerated()), id: \.offset) { _, sensor in
                     HStack {
-                        Text(core.name)
+                        Text(sensor.key)
                             .font(.system(size: 9))
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text(String(format: "%.1f°", core.celsius))
+                        Text(String(format: "%.1f°", sensor.celsius))
                             .font(.system(size: 9).monospacedDigit())
-                            .foregroundStyle(Theme.color(forCelsius: core.celsius))
+                            .foregroundStyle(Theme.color(forCelsius: sensor.celsius))
                     }
                 }
             }

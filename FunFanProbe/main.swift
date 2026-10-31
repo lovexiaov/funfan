@@ -62,9 +62,9 @@ do {
         let group = snapshot.readings.filter { $0.descriptor.subcluster == subcluster }
         guard !group.isEmpty else { continue }
         let avg = snapshot.average(subcluster: subcluster)!
-        let named = snapshot.coreLevelReadings(in: .cpu).filter { $0.descriptor.subcluster == subcluster }.count
-        print(String(format: "   CPU · %@: %d 个传感器（逐核确认 %d），均温 %.1f°C",
-                     subcluster.rawValue, group.count, named, avg))
+        let sensorCount = snapshot.readings.filter { $0.descriptor.subcluster == subcluster }.count
+        print(String(format: "   CPU · %@: %d 个温度探测点，均温 %.1f°C",
+                     subcluster.rawValue, sensorCount, avg))
     }
 
     // 6) 风扇

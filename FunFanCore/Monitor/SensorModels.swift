@@ -19,34 +19,25 @@ public enum CPUSubcluster: String, Codable, Sendable {
     case unknown
 }
 
-/// 单个传感器的描述（键名 + 友好名 + 归类）。
-public struct SensorDescriptor: Equatable, Sendable {
-    public let key: String
-    public let name: String
-    public let category: SensorCategory
-    public let subcluster: CPUSubcluster?
+    /// 单个传感器的描述（键名 + 友好名 + 归类）。
+    public struct SensorDescriptor: Equatable, Sendable {
+        public let key: String
+        public let name: String
+        public let category: SensorCategory
+        public let subcluster: CPUSubcluster?
 
-    /// 是否为「内置密钥表确认的独立传感器」（CPU 逐核 / GPU 逐簇 / SSD 等具体部件）。
-    ///
-    /// 前缀回退发现的键（如 `Tp0W`、`Te0V`）只保证**类别**，不代表一个核——
-    /// 同一物理核常暴露多个探测点，把它们当「核」会虚构出几十个假核心。
-    /// 因此这些键 `isCoreLevel == false`，UI 只在簇/类别层级聚合展示。
-    public let isCoreLevel: Bool
-
-    public init(
-        key: String,
-        name: String,
-        category: SensorCategory,
-        subcluster: CPUSubcluster? = nil,
-        isCoreLevel: Bool = false
-    ) {
-        self.key = key
-        self.name = name
-        self.category = category
-        self.subcluster = subcluster
-        self.isCoreLevel = isCoreLevel
+        public init(
+            key: String,
+            name: String,
+            category: SensorCategory,
+            subcluster: CPUSubcluster? = nil
+        ) {
+            self.key = key
+            self.name = name
+            self.category = category
+            self.subcluster = subcluster
+        }
     }
-}
 
 /// 某传感器的实时读数。
 public struct SensorReading: Equatable, Sendable {
@@ -81,11 +72,6 @@ public struct SensorSnapshot: Equatable, Sendable {
 
     public func averageCPU() -> Double? { average(for: .cpu) }
     public func averageGPU() -> Double? { average(for: .gpu) }
-
-    /// 仅「逐核确认」的读数（对应 UI「展开各核心」，不含前缀推断的聚合成员）。
-    public func coreLevelReadings(in category: SensorCategory) -> [SensorReading] {
-        readings(in: category).filter { $0.descriptor.isCoreLevel }
-    }
 
     /// 某 CPU 子簇（P/E/Super）的平均温度——包含该簇全部传感器，反映簇整体热度。
     public func average(subcluster: CPUSubcluster) -> Double? {

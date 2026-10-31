@@ -2,24 +2,6 @@ import Foundation
 import Combine
 import FunFanCore
 
-/// 按簇/核心聚合后的温度组，供 UI 展开显示。
-struct CoreGroup: Identifiable, Equatable {
-    let id: String
-    let title: String
-    /// 该组全部传感器的均温。
-    let average: Double
-    /// 仅「逐核确认」的传感器（不编造核号）。
-    let confirmedCores: [(name: String, celsius: Double)]
-
-    static func == (lhs: CoreGroup, rhs: CoreGroup) -> Bool {
-        lhs.id == rhs.id
-            && lhs.title == rhs.title
-            && lhs.average == rhs.average
-            && lhs.confirmedCores.count == rhs.confirmedCores.count
-            && lhs.confirmedCores.elementsEqual(rhs.confirmedCores, by: { $0.name == $1.name && $0.celsius == $1.celsius })
-    }
-}
-
 /// 监控数据源：温度 + 风扇 + 电量，全部免 root。
 ///
 /// 线程模型：采样在专用串行队列（单帧约 19 ms，不能占主线程），
@@ -146,7 +128,7 @@ final class MonitorStore: ObservableObject {
 
         let battery = batteryStore?.refresh() ?? .absent
 
-        let groups = Self.coreGroups(from: snapshot)
+        let groups = snapshot.coreGroups()
         let cpu = snapshot.averageCPU()
         let gpu = snapshot.averageGPU()
         let ssd = snapshot.average(for: .ssd)
@@ -177,32 +159,6 @@ final class MonitorStore: ObservableObject {
 
     /// 把快照按「CPU 的 P/E/Super 簇 + GPU 簇」聚合成可展开的分组。
     ///
-    /// 只有内置表确认过的键才算「逐核」，其余只做簇均温——不编造核号。
-    private static func coreGroups(from snapshot: SensorSnapshot) -> [CoreGroup] {
-        var groups: [CoreGroup] = []
-
-        for subcluster in [CPUSubcluster.performance, .efficiency, .superCluster] {
-            let all = snapshot.readings.filter { $0.descriptor.subcluster == subcluster }
-            guard !all.isEmpty, let average = snapshot.average(subcluster: subcluster) else { continue }
-            let cores = snapshot.coreLevelReadings(in: .cpu)
-                .filter { $0.descriptor.subcluster == subcluster }
-                .map { (name: $0.descriptor.name, celsius: $0.celsius) }
-            groups.append(CoreGroup(
-                id: "cpu-\(subcluster.rawValue)",
-                title: "CPU · \(subcluster.rawValue)",
-                average: average,
-                confirmedCores: cores
-            ))
-        }
-
-        let gpuReadings = snapshot.readings(in: .gpu)
-        if !gpuReadings.isEmpty, let gpuAverage = snapshot.averageGPU() {
-            let cores = gpuReadings
-                .filter { $0.descriptor.isCoreLevel }
-                .map { (name: $0.descriptor.name, celsius: $0.celsius) }
-            groups.append(CoreGroup(id: "gpu", title: "GPU", average: gpuAverage, confirmedCores: cores))
-        }
-
-        return groups
-    }
+    /// 逻辑已下沉到 `SensorSnapshot.coreGroups()`（FunFanCore，可单测）：
+    /// 每个簇列出其全部 SMC 温度探测点（真实键名），核心数由 `ChipTopology` 单独提供。
 }
