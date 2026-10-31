@@ -304,6 +304,12 @@
   - 本机 `funfanctl topology` 输出与本机 sysctl/IORegistry 完全一致（4P+6E+10GPU）。
   - UI 为真机可视项：需在用户终端 `make app` 后目检拓扑卡与探测点列表。
 
+- **UI 重做展开区布局（commit 16107b8）**：用户反馈展开区太高、太散、对不上核。
+  - 展开区整体包进 `ScrollView(maxHeight: 280)` 限高，不再被 P 簇 18 个探测点撑成几十行。
+  - 新增「真实核心布局矩阵」：按 `ChipTopology` 的核数渲染 P0…P3 / E0…E5 / G0…G9 方块，一一对应物理核；方块按所在簇均温着色，底部标注「SMC 无逐核读数」。
+  - 各簇探测点从整行长列改为两列紧凑网格（`probeChip`），标注重申「N 个探测点（非逐核）」。
+  - Verify：`swift build` 0 错误；`swift test` 288 全绿。UI 为真机可视项，需 `make app` 后目检矩阵与限高滚动。
+
 ---
 
 ## 完成判据（全量）
