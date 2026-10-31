@@ -23,6 +23,8 @@ final class MonitorStore: ObservableObject {
     @Published private(set) var sensorCount: Int = 0
     /// 采样耗时（ms），用于自检「是否够轻量」。
     @Published private(set) var sampleCostMs: Double = 0
+    /// 芯片真实拓扑（核心数来自系统接口，非 SMC 倒推）。启动读一次即可，硬件不变。
+    @Published private(set) var chipTopology: ChipTopology?
 
     /// 每次采样完成后回调（用于刷新菜单栏标题）。
     var onSample: ((Double?) -> Void)?
@@ -43,10 +45,20 @@ final class MonitorStore: ObservableObject {
     /// 主风扇索引。
     var primaryFan: FanState? { fans.first }
 
+    /// 拓扑来源（可注入假实现用于测试）。默认从 sysctl / IORegistry 读真实硬件。
+    var topologyProvider: TopologyProviding = SystemTopologyProbe()
+
     // MARK: - 生命周期
 
     func start() {
+        readTopology()
         queue.async { [weak self] in self?.openIfNeeded() }
+    }
+
+    /// 读一次芯片拓扑（便宜，且硬件不变）。失败则留 nil，UI 降级不显示该卡。
+    private func readTopology() {
+        let topo = topologyProvider.read()
+        DispatchQueue.main.async { [weak self] in self?.chipTopology = topo }
     }
 
     /// 睡眠唤醒后重建连接：睡眠会让 SMC 连接失效，键信息缓存也可能过期。

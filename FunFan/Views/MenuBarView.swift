@@ -187,6 +187,12 @@ struct MenuBarView: View {
                 tempChip("环境", monitor.ambientAverage)
             }
 
+            /// 芯片真实拓扑卡：核心数来自系统接口，直接回答「为什么展开的核数
+            /// 和实际情况对不上」——这里显示的是权威值，下面温度区只列探测点。
+            if let topo = monitor.chipTopology {
+                chipTopologyCard(topo)
+            }
+
             if !monitor.coreGroups.isEmpty {
                 coreDisclosure
                 if showCores {
@@ -258,6 +264,9 @@ struct MenuBarView: View {
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
                     .foregroundStyle(Theme.color(forCelsius: group.average))
             }
+            Text("温度探测点 \(group.sensorCount) 个（非逐核）")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
             if group.sensors.isEmpty {
                 Text("（无传感器）")
                     .font(.system(size: 9))
@@ -277,6 +286,23 @@ struct MenuBarView: View {
             }
         }
         .padding(.leading, 4)
+    }
+
+    /// 芯片真实拓扑卡：核心数来自系统接口（sysctl / IORegistry），是权威值。
+    /// 下面温度区只列 SMC 探测点，数量不等于这里的核数——两处一起看才不矛盾。
+    private func chipTopologyCard(_ topo: ChipTopology) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            Text(topo.chipName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary)
+            Spacer()
+            Text("\(topo.performanceCores)P + \(topo.efficiencyCores)E · \(topo.gpuCores) 核 GPU")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(cardBackground)
     }
 
     // MARK: - 电量
