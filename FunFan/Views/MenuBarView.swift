@@ -187,8 +187,8 @@ struct MenuBarView: View {
                 tempChip("环境", monitor.ambientAverage)
             }
 
-            /// 芯片真实拓扑卡：核心数来自系统接口，直接回答「为什么展开的核数
-            /// 和实际情况对不上」——这里显示的是权威值，下面温度区只列探测点。
+            /// 芯片真实拓扑卡：核心数来自系统接口（sysctl / IORegistry），是权威值，
+            /// 直接回答「为什么展开的核数和实际情况对不上」——这里永远是真值。
             if let topo = monitor.chipTopology {
                 chipTopologyCard(topo)
             }
@@ -196,12 +196,7 @@ struct MenuBarView: View {
             if !monitor.coreGroups.isEmpty {
                 coreDisclosure
                 if showCores {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(monitor.coreGroups) { group in
-                            coreGroupRow(group)
-                        }
-                    }
-                    .padding(.top, 2)
+                    expandedThermalDetail
                 }
             }
         }
@@ -232,8 +227,8 @@ struct MenuBarView: View {
         }
         .buttonStyle(.plain)
         .funfanFocusRing(cornerRadius: 6, outset: 2)
-        .accessibilityLabel(showCores ? "收起各核心温度" : "展开各核心温度")
-        .help(showCores ? "收起逐核温度" : "展开每个 CPU 核心的温度")
+        .accessibilityLabel(showCores ? "收起核心温度" : "展开核心温度")
+        .help(showCores ? "收起核心布局与温度探测点" : "展开核心布局与各簇温度探测点")
     }
 
     private func tempChip(_ label: String, _ value: Double?) -> some View {
@@ -254,8 +249,93 @@ struct MenuBarView: View {
         .background(cardBackground)
     }
 
-    private func coreGroupRow(_ group: CoreGroup) -> some View {
+    /// 展开后的全部温度细节：**限高滚动**，避免 P 簇 18 个探测点把 popover 撑成
+    /// 几十行高。上面是「真实核心布局矩阵」（一一对应到每个物理核），下面是各簇
+    /// 探测点的紧凑网格（两列）。
+    private var expandedThermalDetail: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 10) {
+                if let topo = monitor.chipTopology {
+                    coreMatrixCard(topo)
+                }
+                ForEach(monitor.coreGroups) { group in
+                    probeClusterBlock(group)
+                }
+            }
+            .padding(.top, 2)
+        }
+        .frame(maxHeight: 280)
+    }
+
+    /// 真实核心布局：方块数 = 系统接口读到的 P/E/GPU 核数，**一一对应每个物理核**
+    /// （P0…P3 / E0…E5 / G0…G9）。SMC 不提供逐核温度，方块按所在簇的均温着色
+    /// （簇均温由该簇全部探测点算出），并在底部注明，避免再次被误读成逐核读数。
+    private func coreMatrixCard(_ topo: ChipTopology) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("核心布局（真实核数）")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+
+            coreRow("性能核", count: topo.performanceCores, prefix: "P",
+                    average: monitor.coreGroups.first(where: { $0.id == "cpu-performance" })?.average)
+            if topo.efficiencyCores > 0 {
+                coreRow("能效核", count: topo.efficiencyCores, prefix: "E",
+                        average: monitor.coreGroups.first(where: { $0.id == "cpu-efficiency" })?.average)
+            }
+            if topo.gpuCores > 0 {
+                coreRow("GPU 核", count: topo.gpuCores, prefix: "G",
+                        average: monitor.coreGroups.first(where: { $0.id == "gpu" })?.average)
+            }
+
+            Text("SMC 无逐核读数，方块按所在簇均温着色")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(cardBackground)
+    }
+
+    private func coreRow(_ label: String, count: Int, prefix: String, average: Double?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                if let average {
+                    Text(String(format: "%.1f°", average))
+                        .font(.system(size: 9, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Theme.color(forCelsius: average))
+                }
+                Spacer(minLength: 0)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 22), spacing: 4)], spacing: 4) {
+                ForEach(0..<count, id: \.self) { i in
+                    coreTile("\(prefix)\(i)", color: Theme.color(forCelsius: average))
+                }
+            }
+        }
+    }
+
+    private func coreTile(_ title: String, color: Color) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(color.opacity(0.20))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(color.opacity(0.5), lineWidth: 0.5)
+                )
+            Text(title)
+                .font(.system(size: 8, weight: .medium).monospacedDigit())
+                .foregroundStyle(color)
+        }
+        .frame(width: 22, height: 18)
+    }
+
+    /// 单个簇的探测点：紧凑两列网格（替代原来逐条整行），从视觉上收拢「散」的感觉。
+    /// 仍明确标注探测点数量 ≠ 核数，避免再次被误读成逐核。
+    private func probeClusterBlock(_ group: CoreGroup) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(group.title)
                     .font(.system(size: 10, weight: .medium))
@@ -264,7 +344,7 @@ struct MenuBarView: View {
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
                     .foregroundStyle(Theme.color(forCelsius: group.average))
             }
-            Text("温度探测点 \(group.sensorCount) 个（非逐核）")
+            Text("\(group.sensorCount) 个探测点（非逐核）")
                 .font(.system(size: 9))
                 .foregroundStyle(.tertiary)
             if group.sensors.isEmpty {
@@ -272,20 +352,32 @@ struct MenuBarView: View {
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
             } else {
-                ForEach(Array(group.sensors.enumerated()), id: \.offset) { _, sensor in
-                    HStack {
-                        Text(sensor.key)
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text(String(format: "%.1f°", sensor.celsius))
-                            .font(.system(size: 9).monospacedDigit())
-                            .foregroundStyle(Theme.color(forCelsius: sensor.celsius))
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 4) {
+                    ForEach(Array(group.sensors.enumerated()), id: \.offset) { _, sensor in
+                        probeChip(sensor.key, sensor.celsius)
                     }
                 }
             }
         }
         .padding(.leading, 4)
+    }
+
+    private func probeChip(_ key: String, _ value: Double) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(Theme.color(forCelsius: value))
+                .frame(width: 5, height: 5)
+            Text(key)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            Text(String(format: "%.1f°", value))
+                .font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(Theme.color(forCelsius: value))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(cardBackground)
     }
 
     /// 芯片真实拓扑卡：核心数来自系统接口（sysctl / IORegistry），是权威值。
