@@ -277,5 +277,34 @@
 
 ---
 
+## M7 · 展开面板核数诚实化（方案 A，2026-10-31）
+
+> 背景：用户报「展开面板的 CPU/GPU 个数和实际对不上」。根因是 UI 用 **SMC 温度键数量**
+> 倒推核心数，而 Apple Silicon 一个物理核簇会暴露多个温度探测点（`Tp00/Tp01…` 是探测点
+> 编号不是「第几个核」）。Mac mini M4 实测 P 簇 18 个 `Tp*` 键对应仅 4 个 P 核，于是面板
+> 显示 P=2/E=1/GPU=2，与真实 4/6/1（GPU 10 核）不符。
+
+- 方案 A：核心数改由**系统接口**获取，SMC 温度键只用于贴温度，不再数核。
+  - T-A `ChipTopology`（FunFanCore/Hardware）：P/E 走 `sysctl hw.perflevel0/1.physicalcpu`，
+    GPU 走 IORegistry `AGXAccelerator` 的 `gpu-core-count`；`TopologyProviding` 协议可注入假数据单测。
+  - T-B 退休 `isCoreLevel`：分组逻辑下沉 `CoreGroups.swift`，`CoreGroup.sensors` 列出簇内全部
+    真实 SMC 探测点（真实键名），数量 = 真实键数；`SensorCatalog` 编造的「P-Core 0/
+    GPU Cluster 0」命名改回真实键名。
+  - T-C `MonitorStore` 暴露 `chipTopology`，`MenuBarView` 展开顶部加「芯片真实拓扑卡」
+    （如 `Apple M4 · 4P + 6E · 10 核 GPU`），温度分组标注「温度探测点 N 个（非逐核）」。
+  - T-D `funfanctl topology` 子命令，真机核对：`Apple M4 · CPU 10 核（性能 4 + 能效 6）· GPU 10 核`。
+- 关键决策：**不再维护「逐核映射表」**。早期 `isCoreLevel` 标记硬编码表项来防虚构核数，但表会
+  跨机型错配（如 `Tf04/Tf09` 与 `Tp01/Tp09` 同名「P-Core 0」重复计数），且仍对不上真实核数。
+  改为「系统接口读真实核数 + SMC 仅展示探测点」，彻底消除误导。
+- 提交：`6c591b7`（ChipTopology）、`ac88ca6`（退休 isCoreLevel）、`89891e9`（拓扑卡）、
+  `a815b6c`（funfanctl topology）。
+- Verify：
+  - `swift test --disable-sandbox`：全绿（含 ChipTopologyTests 真实探针读 M4 硬件、SensorGranularityTests
+    断言簇内探测点数=真实键数且键名不含「Core」）。
+  - 本机 `funfanctl topology` 输出与本机 sysctl/IORegistry 完全一致（4P+6E+10GPU）。
+  - UI 为真机可视项：需在用户终端 `make app` 后目检拓扑卡与探测点列表。
+
+---
+
 ## 完成判据（全量）
 满足 `docs/SPEC-FunFan.md` §8 全部 12 条 Success Criteria；`make test` 全绿（单测 ≥80% 覆盖）；`make build` 产出可分发 app。

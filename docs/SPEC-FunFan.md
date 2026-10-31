@@ -104,8 +104,9 @@ FunFan/
 │   │   ├── SMCKeyEnumeration.swift # 按索引枚举全键（纯逻辑，异常槽位跳过）
 │   │   └── Codecs.swift            # flt/fpe2/sp78/ioft/ui8 编解码（读 type 再解码）
 │   ├── Monitor/
-│   │   ├── SensorCatalog.swift     # `T*` 语义归类 + 温度键筛选 + isCoreLevel 粒度
+│   │   ├── SensorCatalog.swift     # `T*` 语义归类 + 温度键筛选（真实键名作标签）
 │   │   ├── SensorModels.swift      # Descriptor/Reading/Snapshot + 类别与簇聚合
+│   │   ├── CoreGroups.swift        # 按簇聚合温度组，列出真实 SMC 探测点（非核）
 │   │   ├── SensorMonitor.swift     # 滑动均值引擎（注入样本源，纯逻辑）
 │   │   ├── SMCTemperatureProvider.swift # 键表缓存 + 类别过滤 + 合理性过滤
 │   │   └── SamplingPolicy.swift    # 自适应采样频率（0.5 / 2 / 5 s）
@@ -153,8 +154,11 @@ FunFan/
   - **合理性过滤**：丢弃 (4,132)℃ 之外的值；睡眠切换偶发 `kIOReturnTimeout` 时 50 ms 后重试一次。
   - 注意：`powermetrics`/`IOReport` 在 AS 上取不到具体摄氏度，温度**以 SMC 为准**。
 - `SensorStore`：轮询 SMC 取各传感器实时值，维护「最新值 + 滑动均值（窗口可配，默认 30 s）」，供 UI 展示与规则评估；读操作无需 root。
-- **UI 展示粒度**：CPU 与 GPU 同时提供 **均温**（四宫格主数值）与 **按簇分核明细**（CPU 细化 P 性能核 / E 能效核 / M5 Super 簇，GPU 按计算簇），每核独立阈值着色；明细默认折叠、按需展开（见 UI 指南 `CoreTempBreakdown`）。
-- **粒度诚实原则（实测教训）**：前缀回退发现的键（如 `Tp0W`、`Te0V`）只保证**类别**，不代表一个核——同一物理核常暴露多个探测点。真机实测某机型 P 簇有 41 个传感器，若按前缀当「核」会虚构 41 个核。因此 `SensorDescriptor.isCoreLevel` 仅对**内置表确认**的键为 true；「逐核」列表只列这些，其余按簇聚合展示。补全逐核映射属数据维护任务（见 `tasks/todo.md` T4b）。
+- **UI 展示粒度**：CPU 与 GPU 同时提供 **均温**（四宫格主数值）与 **按簇明细**（CPU 细化 P 性能核 / E 能效核 / M5 Super 簇，GPU 单独一组），明细默认折叠、按需展开（见 UI 指南 `CoreTempBreakdown`）。展开面板顶部另有**芯片真实拓扑卡**（芯片名 + 性能核/能效核/GPU 核数），核心数来自系统接口而非温度键。
+- **粒度诚实原则（实测教训）**：Apple Silicon 一个物理核簇会暴露**多个** SMC 温度探测点（`Tp00`/`Tp01`… 是探测点编号，不是「第几个核」）。真机实测 Mac mini M4 的 P 簇有 18 个 `Tp*` 键，对应却只有 4 个 P 核——拿温度键数量当核数必然对不上。因此：
+  - 核心数改由 **`ChipTopology`（FunFanCore/Hardware）** 从系统接口读取：P/E 走 `sysctl hw.perflevel0/1.physicalcpu`，GPU 走 IORegistry `AGXAccelerator` 的 `gpu-core-count`；
+  - SMC 温度键只作**温度探测点**展示，展开明细列出该簇全部探测点（真实键名 `Tp0W` 等），并标注「温度探测点 N 个（非逐核）」，绝不伪造成核数。
+  - 早期用 `SensorDescriptor.isCoreLevel` 标记「内置表确认的逐核键」来防虚构的做法已退役（见提交 ac88ca6）——它既对不上真实核数，又依赖一份会跨机型错配的硬编码表。
 - **采样范围与频率（性能约束，实测驱动）**：
   - 键信息（`dataSize`/`dataType`）开机内不变 → `SMCService` 缓存，读值只需 1 次 IPC（实测 IPC 1584 → 107 次/帧）。
   - 默认**不采样 `.other`** 类别（未识别传感器可达 52 个，占近三分之一成本且不展示）。
@@ -245,7 +249,8 @@ struct SMCParamStruct {
   - `RuleEngineTests`：规则触发/不触发（阈值边界）、迟滞进入/退出、多规则冲突取最大 RPM、与 `SafetyPolicy` 联动的下限 clamp、规则全不触发时回落到系统自动或 idle RPM。
   - `SensorCatalogTests`：给定模拟 `T*` 键集，验证语义归类（CPU/GPU/SSD/环境）与动态枚举；未知键归为 `other`。
   - `SMCKeyEnumerationTests`：全键枚举（按索引取键、零/负计数、单索引失败跳过不中断）、温度键筛选与去重排序、未知代系键仍能归类。
-  - `SensorGranularityTests`：仅内置表确认的键 `isCoreLevel == true`；前缀回退键为 false（防虚构核心数）；类别均温仍包含全部传感器。
+  - `SensorGranularityTests`：回退键名 = 真实键名（不编造「Core」类标签）；簇均温仍包含全部传感器；`SensorSnapshot.coreGroups()` 列出簇内全部真实探测点，数量等于真实键数。
+  - `ChipTopologyTests`：注入假 probe 验证 `totalCPUCores` 计算；真实探针在 macOS 下从 sysctl/IORegistry 读到非 nil 且核心数自洽。
   - `SMCTemperatureProviderTests` / `TemperatureProviderScopeTests`：键表缓存（只枚举一次）、合理性过滤、单键失败跳过、枚举失败下周期重试、默认排除 `.other`。
   - `SamplingPolicyTests`：三档间隔有序、到期判定、时钟回拨/长挂起立即采样、空闲 CPU 预算断言。
   - `BatteryStoreTests`：模拟 `AppleSmartBattery` 注册表与 `IOPS*` 快照，验证电量%/健康度/功率计算、AS/Intel 容量键回退（`AppleRawMaxCapacity`→`MaxCapacity`）、无电池机型降级、**台式机全 0 属性不得误判为有电池**、温度单位启发式。

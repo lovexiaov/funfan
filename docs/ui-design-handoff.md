@@ -202,6 +202,7 @@ FunFanHelper/      HelperMain · XPCService · LaunchDaemon.plist
 | 设置屏：退出返还 | 只读行（锁图标 + 「始终开启」） | 这是安全不变量而不是偏好项（Spec §7），做成可关闭的开关等于给了用户「让风扇留在手动转速」的机会 |
 | Popover 风扇区「目标」行在自动模式显示 `—` | `Views/MenuBarView.swift` → `fanSection` | `restoreAuto` 刻意只写模式键、**绝不写** `F0Tg`（写目标反而会把风扇拉起来），所以自动模式下 `F0Tg` 会留着上一次的残留值。原来直接显示它，读起来像「模式=系统自动，但还在按 1850 跑」。改为自动时显示 `—`，CLI `status` 同步标注「（残留值，未生效）」 |
 | 键盘焦点环（设计稿未涉及） | `Views/FocusRing.swift` → `.funfanFocusRing(cornerRadius:outset:)`，套在全部自绘控件上 | 自绘换来了离屏可渲染，但也失去了原生控件的焦点外观：系统只能给整块 view 套**直角矩形**焦点环。开启「全键盘控制」（`AppleKeyboardUIMode = 2`）后，每个窗口/浮层一出现焦点就落在首个可聚焦控件上，直角框会一直挂着，套在胶囊开关和圆角卡片上明显错位。改为按控件自身形状画环（accent 2 pt，外扩 2–4 pt），macOS 14+ 同时 `focusEffectDisabled()` 关掉系统矩形环避免叠双层；13 无该 API，退化为系统环。**没有关闭键盘导航**——关掉环等于让全键盘用户失去「焦点在哪」的唯一提示 |
+| 展开面板「按簇分核明细」（设计稿 `CoreTempBreakdown` 的每核温度） | `MonitorStore.coreGroups` → `CoreGroup.sensors`（全部 SMC 探测点，真实键名）+ 顶部「芯片真实拓扑卡」 | 设计稿假设能逐核读温度，但 Apple Silicon 一个物理核簇暴露**多个** SMC 温度探测点（`Tp00/Tp01…` 是探测点编号不是「第几个核」）。Mac mini M4 实测 P 簇 18 个 `Tp*` 键对应仅 4 个 P 核——逐核展示必然对不上真实核数。改为：核心数由 `ChipTopology`（sysctl perflevel + IORegistry gpu-core-count）提供，单独用拓扑卡显示；温度区只列真实探测点并标注「温度探测点 N 个（非逐核）」，不再伪造成核。早期 `isCoreLevel` 硬编码映射表同步退役（跨机型错配且仍对不上） |
 
 **设计走查方法**
 ```
