@@ -39,7 +39,7 @@ body:
     attributes:
       label: FunFan 版本
       description: 设置窗口底部可见；源码构建请贴 `git rev-parse --short HEAD`
-      placeholder: 1.0.0-alpha.2
+      placeholder: 1.0.0-alpha.3
     validations:
       required: true
 

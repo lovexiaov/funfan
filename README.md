@@ -252,8 +252,8 @@ make publish-unsigned    # 真发：单测 → 打包 → DMG + ZIP + SHA256SUMS
 不想占本机时间，或者手上不是开发机时，把 tag 推上去就够了：
 
 ```bash
-echo 1.0.0-alpha.2 > VERSION && git commit -am "版本号 1.0.0-alpha.2"
-git tag -a v1.0.0-alpha.2 -m "FunFan 1.0.0-alpha.2" && git push origin v1.0.0-alpha.2
+echo 1.0.0-alpha.3 > VERSION && git commit -am "版本号 1.0.0-alpha.3"
+git tag -a v1.0.0-alpha.3 -m "FunFan 1.0.0-alpha.3" && git push origin v1.0.0-alpha.3
 ```
 
 `.github/workflows/release.yml` 会在 GitHub 的 macOS 机器上跑：单测 → 组 `.app` → DMG → ZIP → `SHA256SUMS.txt` → 校验产物结构 → **建草稿 Release** 并挂上三个附件。`VERSION` 与 tag 不一致会直接失败，不会糊里糊涂发出去。

@@ -99,7 +99,7 @@ brew install --cask lovexiaov/tap/funfan
 
 ```ruby
 cask "funfan" do
-  version "1.0.0-alpha.2"
+  version "1.0.0-alpha.3"
   sha256 "发布后由 SHA256SUMS.txt 取 DMG 那一行填入"
 
   url "https://github.com/lovexiaov/funfan/releases/download/v#{version}/FunFan-#{version}.dmg"
