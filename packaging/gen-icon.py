@@ -41,9 +41,10 @@ FunFan 不是「风扇」工具，而是「接管风扇转速」的工具：曲�
 --------------------------------------------------------------------------
 四、用法
 --------------------------------------------------------------------------
-  python3 packaging/gen-icon.py                  # 主推（浅银）+ 深色备选
-  python3 packaging/gen-icon.py --concept plain  # 退回纯风扇做对照
-  python3 packaging/gen-icon.py --only dark --no-icns
+  python3 packaging/gen-icon.py                   # 正式版（深板岩）+ 浅银变体
+  python3 packaging/gen-icon.py --only light      # 只出浅银变体，不动打包产物
+  python3 packaging/gen-icon.py --concept plain   # 退回纯风扇做对照
+  python3 packaging/gen-icon.py --no-icns         # 跳过 icns 打包，快速预览
 
 几何是唯一真源：SVG 与 PNG 预览由同一份几何派生，两边不会走样。
 """
@@ -65,6 +66,7 @@ SQUIRCLE_N = 5.0          # 超椭圆指数，越大越方
 
 # ---- 风扇本体 ------------------------------------------------------------
 CONCEPT = "knob"          # knob = 旋钮轮毂（主推）；plain = 纯风扇（对照）
+PRIMARY = "dark"          # 正式版配色：深板岩（Dock 里辨识度最高，冷感更强）
 R1_SAFE = {"knob": 306.0, "plain": 312.0}
 R1 = 306.0                # 叶尖半径
 
@@ -96,19 +98,7 @@ RENDER_SCALE = 4          # 超采样倍数，先大后缩
 
 # ---- 配色 ----------------------------------------------------------------
 THEMES = {
-    # 主推：浅银底板 + 深蓝钢扇叶。底板压深一档、扇叶提饱和，16px 仍有对比。
-    "light": {
-        "plate_top": "#EBF2FA",
-        "plate_bottom": "#AEBFD4",
-        "blade_tip": "#5FA9E3",
-        "blade_root": "#17487A",
-        "hub_top": "#3D4A5E",
-        "hub_bottom": "#1B232E",
-        "hub_ring": "#8494A8",
-        "hub_cap": "#B6C3D2",
-        "sheen": 1.0,           # 顶部高光强度系数
-    },
-    # 备选：深板岩底板，Dock 里辨识度最高，冷感更强。
+    # 正式版：深板岩底板，Dock 里辨识度最高，冷感更强。
     "dark": {
         "plate_top": "#27384B",
         "plate_bottom": "#0E1621",
@@ -119,6 +109,18 @@ THEMES = {
         "hub_ring": "#5E7189",
         "hub_cap": "#9DB0C6",
         "sheen": 0.38,          # 深底上同样的高光会糊成一片雾，压到 38%
+    },
+    # 备选：浅银底板 + 深蓝钢扇叶。留作变体，不参与打包。
+    "light": {
+        "plate_top": "#EBF2FA",
+        "plate_bottom": "#AEBFD4",
+        "blade_tip": "#5FA9E3",
+        "blade_root": "#17487A",
+        "hub_top": "#3D4A5E",
+        "hub_bottom": "#1B232E",
+        "hub_ring": "#8494A8",
+        "hub_cap": "#B6C3D2",
+        "sheen": 1.0,           # 顶部高光强度系数
     },
 }
 
@@ -542,7 +544,7 @@ def main():
         CONCEPT = args.concept
     R1 = R1_SAFE[CONCEPT]
 
-    themes = [args.only] if args.only else ["light", "dark"]
+    themes = [args.only] if args.only else [PRIMARY, "light"]
     os.makedirs(args.variant_dir, exist_ok=True)
 
     # 先自检：五片叶必须等大等形，否则说明旋转过程把叶片裁掉了
@@ -555,18 +557,22 @@ def main():
 
     for t in themes:
         big = render(t, 1024)
-        if t == "light":
-            write_svg(t, "packaging/AppIcon.svg")
-            big.save("packaging/AppIcon-1024.png")
-            if not args.no_icns:
-                write_icns("packaging/AppIcon-1024.png", "packaging/AppIcon.icns")
+        # 所有配色都落一份变体，方便随时比对；只有 PRIMARY 进打包链路
         write_svg(t, os.path.join(args.variant_dir, f"AppIcon-{t}.svg"))
         big.save(os.path.join(args.variant_dir, f"AppIcon-{t}-1024.png"))
         for px in (256, 128, 64, 32, 16):
             big.resize((px, px), Image.LANCZOS).save(
                 os.path.join(args.variant_dir, f"AppIcon-{t}-{px}.png")
             )
-        print(f"[ok] {t} concept={CONCEPT}")
+        tag = "  ← 正式版" if t == PRIMARY else ""
+        print(f"[ok] {t} concept={CONCEPT}{tag}")
+
+        if t != PRIMARY:
+            continue
+        write_svg(t, "packaging/AppIcon.svg")
+        big.save("packaging/AppIcon-1024.png")
+        if not args.no_icns:
+            write_icns("packaging/AppIcon-1024.png", "packaging/AppIcon.icns")
 
 
 if __name__ == "__main__":
