@@ -194,7 +194,8 @@ struct MenuBarView: View {
                 tempChip("CPU 均温", monitor.cpuAverage)
                 tempChip("GPU 均温", monitor.gpuAverage)
                 tempChip("SSD", monitor.ssdAverage)
-                tempChip("环境", monitor.ambientAverage)
+                tempChip("环境", monitor.ambientAverage,
+                         unsupported: monitor.ambientAvailability == .unsupported)
             }
 
             /// 芯片真实拓扑卡：核心数来自系统接口（sysctl / IORegistry），是权威值，
@@ -245,7 +246,15 @@ struct MenuBarView: View {
     ///
     /// 数值一律 `textPrimary`：原来四格全绿时，颜色既没有区分度又把主数据降级了。
     /// 状态交给左侧指示物（形态 + 颜色双通道）。
-    private func tempChip(_ label: String, _ value: Double?) -> some View {
+    ///
+    /// `unsupported` 专门给「这台机器压根没有该类传感器」用（本机 Mac mini M4
+    /// 的 `TA*` 环境键就是这种情况）。以前那种一律显示 `—` 的做法会让人以为
+    /// 是读失败、等下就好，实际上永远不会有值。
+    private func tempChip(
+        _ label: String,
+        _ value: Double?,
+        unsupported: Bool = false
+    ) -> some View {
         HStack(spacing: 7) {
             TemperatureIndicator(level: .init(value), color: palette.temperature(value))
             Text(label)
@@ -256,6 +265,10 @@ struct MenuBarView: View {
                 Text(String(format: "%.0f°", value))
                     .font(Theme.Typo.smallValue)
                     .foregroundStyle(palette.textPrimary)
+            } else if unsupported {
+                Text("无传感器")
+                    .font(Theme.Typo.meta)
+                    .foregroundStyle(palette.textTertiary)
             } else {
                 Text("—")
                     .font(Theme.Typo.smallValue)
@@ -265,6 +278,7 @@ struct MenuBarView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(cardBackground)
+        .help(if: unsupported, "这台机器没有暴露\(label)温度传感器（SMC 里没有对应键），不是读取失败")
     }
 
     /// 展开后的全部温度细节：**限高滚动**，避免 75 个探测点把 popover 撑成

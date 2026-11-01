@@ -318,3 +318,18 @@ extension ControlStrategy {
         }
     }
 }
+
+extension View {
+    /// 只在条件成立时挂 `help`。
+    ///
+    /// 为什么需要：SwiftUI 没有条件修饰符，直接写 `.help(cond ? "..." : "")`
+    /// 会给「无提示」的视图留下一个空 tooltip 占位（鼠标悬停时闪一下空白）。
+    @ViewBuilder
+    func help(if condition: Bool, _ text: String) -> some View {
+        if condition {
+            self.help(text)
+        } else {
+            self
+        }
+    }
+}
