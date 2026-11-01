@@ -192,6 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         // 退出必须返还系统自动，否则风扇会被留在手动模式
+        ControlJournal.write("退出：当前策略 \(control.strategy.rawValue)（返还系统控制）")
         control.release()
         monitor.stop()
         lid.stop()

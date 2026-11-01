@@ -6,6 +6,12 @@ import AppKit
 //   swift run --disable-sandbox FunFan
 // 正式分发需打成 .app（含 Info.plist 的 LSUIElement）并签名公证。
 
+// 偏好持久化取证（必须放在 `NSApplication.shared` 之前：连上窗口服务器后
+// 进程在无人值守环境下会被直接干掉，取证就跑不成了）
+if PrefsProbe.runIfRequested() {
+    exit(0)
+}
+
 let app = NSApplication.shared
 
 // 特权组件的命令行验收（不启动 UI，打印状态后直接退出）

@@ -36,7 +36,9 @@ final class ControlStore: ObservableObject {
                 mirroredStrategy = strategy
                 return
             }
+            ControlJournal.write("用户改策略：\(oldValue.rawValue) → \(strategy.rawValue)（落盘）")
             prefs.strategy = strategy
+            recovery.reset()
             if oldValue.isAutomated { teardownAutomation() }
             mirroredStrategy = strategy
             apply()
@@ -107,6 +109,16 @@ final class ControlStore: ObservableObject {
     /// 租约心跳间隔：helper 侧 TTL 10 s，2 s 一次足够容错。
     private let heartbeatInterval: TimeInterval = 2
 
+    /// 心跳代次。`stopHeartbeat()` 会 +1，让**已经在队列里排队**的 tick 直接作废。
+    ///
+    /// 少这一层就有一条缝：定时器被取消/或者我们刚 `restoreAuto` 清掉 helper 租约，
+    /// 而在途的 tick 紧接着跑到 helper —— 那边已经没有租约，`heartbeat()` 返回 false，
+    /// 旧代码据此把用户策略改成「自动」并落盘。一次瞬时抖动就这样变成了永久设置。
+    private var heartbeatGeneration = 0
+
+    /// 租约断开后的重连节奏（有界退避）。只允许在主线程读写。
+    private var recovery = ControlRecoveryPolicy()
+
     // MARK: - 启动
 
     /// 恢复上次的策略与固定转速。
@@ -121,6 +133,7 @@ final class ControlStore: ObservableObject {
         fixedRpm = preferences.fixedRpm
         mirroredStrategy = strategy
         isRestoringPreferences = false
+        ControlJournal.sessionStart(strategy: strategy.rawValue)
     }
 
     func bootstrap() {
@@ -158,17 +171,22 @@ final class ControlStore: ObservableObject {
                         self.conflict = []
                         self.conflictSource = nil
                         self.message = "helper 已连接"
+                        // 连上了就说明通道恢复：退避计数归零，下次断开重新从 2 s 起
+                        self.recovery.reset()
+                        ControlJournal.write("helper 已连接（策略 \(self.strategy.rawValue)）")
                     } else {
                         self.conflict = evidence
                         // 进程名单只用来解释原因，识别不到也照样拦。
                         self.conflictSource = RunningApps.fanControllerName()
                         self.message = "检测到其他程序正在控制风扇，已停止接管"
+                        ControlJournal.write("检测到第三方接管，暂停下发（策略 \(self.strategy.rawValue) 不变）")
                     }
 
                     // 重启后把「固定」真正落回硬件。不做这一步，界面显示固定 3000 RPM，
                     // 风扇却还挂在系统自动上——设置看起来恢复了，其实没有生效。
-                    // 曲线 / 规则不需要：它们在下一帧温度快照里自己评估、自己接管。
-                    if evidence.isEmpty, self.strategy == .fixed {
+                    // 曲线 / 规则不需要立即写硬件：它们在下一帧温度快照里自己评估、
+                    // 自己接管，这里调用只是把「正在接管」的文案摆正。
+                    if evidence.isEmpty, self.strategy != .automatic {
                         self.apply()
                     }
                 }
@@ -177,6 +195,7 @@ final class ControlStore: ObservableObject {
                 DispatchQueue.main.async {
                     self.helperStatus = .unavailable
                     self.message = "未安装特权 helper，仅可监控"
+                    ControlJournal.write("helper 不可用（策略 \(self.strategy.rawValue) 不变）")
                 }
             }
         }
@@ -233,6 +252,7 @@ final class ControlStore: ObservableObject {
                     self.startHeartbeat()
                     DispatchQueue.main.async {
                         self.isManual = true
+                        self.recovery.reset()
                         self.message = String(format: "已设为 %.0f RPM", rpm)
                     }
 
@@ -364,14 +384,19 @@ final class ControlStore: ObservableObject {
                 startHeartbeat()
                 DispatchQueue.main.async {
                     self.isManual = true
+                    self.recovery.reset()
                     self.message = String(format: "%@接管：%.0f RPM", label, rpm)
                 }
 
             case .release:
                 try controller.restoreAuto(fanIndex: fanIndex)
                 stopHeartbeat()
+                // 主动返还时 helper 会清掉租约，紧接着的在途 tick 会拿到 false。
+                // 靠 `stopHeartbeat()` 的代次自增把它作废，并且**不改策略**——
+                // 「曲线暂时不需要接管」不等于「用户想要自动」。
                 DispatchQueue.main.async {
                     self.isManual = false
+                    self.recovery.reset()
                     self.message = "\(label)未接管，已返还系统自动"
                 }
             }
@@ -466,6 +491,7 @@ final class ControlStore: ObservableObject {
 
     /// 开盖：恢复接管。规则策略会在下一帧温度快照上重新评估，固定策略立即重新下发。
     func resumeAfterLid() {
+        recovery.reset()
         queue.async { [weak self] in
             guard let self, self.suspendedForLid else { return }
             self.suspendedForLid = false
@@ -498,20 +524,16 @@ final class ControlStore: ObservableObject {
 
     private func startHeartbeat() {
         guard heartbeat == nil else { return }
+        heartbeatGeneration &+= 1
+        let generation = heartbeatGeneration
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + heartbeatInterval, repeating: heartbeatInterval)
         timer.setEventHandler { [weak self] in
             guard let self, let transport = self.transport else { return }
+            // 已经 stop 过（或换了新一轮）：在途的 tick 只许作废，不许改状态
+            guard self.heartbeatGeneration == generation else { return }
             if !transport.heartbeat() {
-                // 租约已失效：helper 已自行返还，GUI 侧同步状态
-                self.stopHeartbeat()
-                self.automation.noteExternallyReleased()
-                self.curveAutomation.noteExternallyReleased()
-                DispatchQueue.main.async {
-                    self.isManual = false
-                    self.strategy = .automatic
-                    self.message = "租约过期，已自动返还系统控制"
-                }
+                self.handleLeaseLost(generation: generation)
             }
         }
         timer.resume()
@@ -519,8 +541,78 @@ final class ControlStore: ObservableObject {
     }
 
     private func stopHeartbeat() {
+        heartbeatGeneration &+= 1
         heartbeat?.cancel()
         heartbeat = nil
+    }
+
+    /// 租约没了：helper 重启、XPC 超时、机器忙着编译、刚被睡眠叫醒，
+    /// 或者我们自己在别处刚 `restoreAuto` 过了（`restore()` 会清 helper 侧租约）。
+    ///
+    /// **铁律：这里绝不写用户策略。** 策略是用户意图，租约是运行时状态；把一次
+    /// 瞬时故障落盘成「自动」，用户下次重启就再也回不来——这正是「策略每次重启
+    /// 都变回自动」的来源（旧实现直接 `strategy = .automatic`，落盘且不可逆）。
+    /// 因此失败只做两件事：交还系统控制（安全），然后按退避重连。
+    private func handleLeaseLost(generation: Int) {
+        guard heartbeatGeneration == generation else { return }
+        stopHeartbeat()
+        automation.noteExternallyReleased()
+        curveAutomation.noteExternallyReleased()
+
+        // 尽力先把风扇还给系统：helper 侧 `restore()` 会清掉租约，风扇回到自动。
+        // 不还就直接重连的话，重连时读到「手动 + 我们没租约」，会被冲突检测
+        // 当成第三方接管（其实是我们自己刚留下的），于是一直不敢重新下发。
+        if let controller = self.controller {
+            try? controller.restoreAuto(fanIndex: 0)
+        }
+
+        let intended = mirroredStrategy
+        ControlJournal.write("租约失败：交还系统控制，策略保持 \(intended.rawValue)")
+
+        DispatchQueue.main.async {
+            self.isManual = false
+            self.triggeredRuleIDs = []
+            self.automatedRpm = nil
+            self.curveRawRpm = nil
+            guard intended != .automatic else {
+                self.message = "租约过期，风扇已交还系统控制"
+                return
+            }
+            self.message = "控制通道中断，已交还系统；正在重连（策略保持「\(intended.label)」）"
+            self.scheduleRecovery()
+        }
+    }
+
+    /// 仅供 `--probe-prefs lease` 取证：把「租约丢失」这条路真走一遍。
+    ///
+    /// 为什么要留这个口子：这条路径以前**会静默改写并落盘用户的策略**，
+    /// 而触发它需要 helper 重启 / XPC 超时 / 睡眠唤醒，全是偶发条件。
+    /// 没有这个入口就只能等它自己发生，等不到就永远不知道修没修好。
+    /// 它只调用失败处理，不伪造任何成功路径，正常运行时没人调。
+    func simulateLeaseLossForDiagnostics() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.handleLeaseLost(generation: self.heartbeatGeneration)
+        }
+    }
+
+    /// 按退避重连：重新连 helper → 重新判冲突 → 重新下发。
+    ///
+    /// 全程不动持久化的策略。次数用尽才停下并提示用户手动「重新检测」——
+    /// 自动重试必须有界，helper 被卸载时不能每 2 s 刷一次 XPC。
+    private func scheduleRecovery() {
+        guard strategy != .automatic else { return }
+        guard let delay = recovery.nextDelay() else {
+            message = "重连失败：helper 无响应。风扇由系统控制，策略仍是「\(strategy.label)」，可点「重新检测」再试"
+            ControlJournal.write("重连放弃（已试 \(recovery.attemptsMade) 次）")
+            return
+        }
+        ControlJournal.write("计划重连：\(Int(delay))s 后（第 \(recovery.attemptsMade) 次）")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.strategy != .automatic else { return }
+            self.message = "正在重连…"
+            self.bootstrap()
+        }
     }
 
     // MARK: - 错误文案
