@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark" data-pref="system">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FunFan · v2 设计稿（明暗双主题 / 语义色分工 / 可读性达标）</title>
+<style>
+/* ============================================================================
+   FunFan UI v2 · 设计稿
+   相对 v1 的改动全部对应 docs/ui-review-2026-11-01.md 的条目：
+     P0-1 语义色浅色不可读      → 令牌按外观分叉，两套都实测 ≥4.5:1
+     P0-2 一色多义              → accent 拆「可点文字(accent) / 图形填充(accent-fill)」，
+                                  warm/hot 退出界面提示，界面提示改用 attention/error
+     P0-3 默认一切正常=全绿     → 数值一律 text-1，状态只由指示物承担（点/环/三角）
+     P0-4 tertiary 不可读       → 三档文字色两套外观全部 ≥4.5:1
+     P1-2 字号 13 档            → 收敛为 11/12/15 + 数值档
+     P1-3 分组标题最淡          → 11/600 + text-2
+     P1-4 卡片只差 5% alpha     → 浅色白卡 + 描边承担边界
+     P1-1 无外观设置            → 设置页新增「外观」三态（本稿可直接点，实时生效）
+   ========================================================================== */
+
+/* ---------- 令牌：深色（默认） ---------- */
+:root {
+  --desk-a: #101012;
+  --desk-b: #08080a;
+  --panel: #1c1c1e;
+  --card: #2a2a2e;
+  --card-line: rgba(255,255,255,0.08);
+  --inset: #141416;
+  --track: rgba(255,255,255,0.10);
+  --seg-track: rgba(255,255,255,0.07);
+  --btn-bg: rgba(255,255,255,0.09);
+  --btn-line: rgba(255,255,255,0.14);
+
+  --text-1: #f5f5f7;          /* 15.63 / 13.13 */
+  --text-2: #a1a1a6;          /*  6.61 /  5.56 */
+  --text-3: #96969b;          /*  5.78 /  4.86 */
+
+  --accent: #46c8ff;          /* 仅可点文字：8.89 / 7.46 */
+  --accent-fill: #46c8ff;     /* 图形填充：环/曲线/焦点环 */
+  --accent-soft: rgba(70,200,255,0.16);
+
+  --temp-cool: #4cd988;       /* 温度轴：只出现在指示物上 */
+  --temp-warm: #ffbd4b;
+  --temp-hot: #ff6b6b;
+
+  --attention: #ffbd4b;       /* 界面轴：提示容器 + 图标 */
+  --attention-soft: rgba(255,189,75,0.12);
+  --error: #ff6b6b;
+  --error-soft: rgba(255,107,107,0.12);
+
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.30);
+  --shadow-win: 0 18px 50px rgba(0,0,0,0.55);
+
+  --font: -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Menlo", monospace;
+}
+
+/* ---------- 令牌：浅色 ---------- */
+html[data-theme="light"] {
+  --desk-a: #f6f6f8;
+  --desk-b: #e2e2e6;
+  --panel: #ececec;
+  --card: #ffffff;
+  --card-line: rgba(0,0,0,0.07);
+  --inset: #f4f4f5;
+  --track: rgba(0,0,0,0.08);
+  --seg-track: rgba(0,0,0,0.06);
+  --btn-bg: #f4f4f5;
+  --btn-line: rgba(0,0,0,0.13);
+
+  --text-1: #1d1d1f;          /* 14.25 / 16.83 */
+  --text-2: #5a5a5a;          /*  5.84 /  6.90 */
+  --text-3: #676767;          /*  4.79 /  5.66 */
+
+  --accent: #0a5f80;          /* 仅可点文字：6.00 / 7.09 */
+  --accent-fill: #0b84b8;     /* 图形填充：3.55（图形门槛 3:1） */
+  --accent-soft: rgba(11,132,184,0.12);
+
+  --temp-cool: #136b37;       /* 5.58 / 6.59 */
+  --temp-warm: #7a4a00;       /* 6.33 / 7.48 */
+  --temp-hot: #b3261e;        /* 5.53 / 6.54 */
+
+  --attention: #7a4a00;
+  --attention-soft: rgba(122,74,0,0.09);
+  --error: #b3261e;
+  --error-soft: rgba(179,38,30,0.08);
+
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-win: 0 18px 44px rgba(0,0,0,0.18);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  color: var(--text-1);
+  background: radial-gradient(900px 500px at 50% -10%, var(--desk-a), var(--desk-b));
+  -webkit-font-smoothing: antialiased;
+  padding: 24px 20px 64px;
+  display: flex; flex-direction: column; align-items: center; gap: 26px;
+  transition: background .25s ease, color .25s ease;
+}
+svg { display: block; }
+
+/* ---------- 顶部工具条 ---------- */
+.topbar {
+  width: 100%; max-width: 1160px;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand b { font-size: 15px; font-weight: 600; letter-spacing: .2px; }
+.brand span { font-size: 11px; color: var(--text-3); }
+.ctl { margin-left: auto; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ctl-label { font-size: 11px; color: var(--text-3); }
+
+/* ---------- 分段控件（与产品同构） ---------- */
+.seg {
+  display: inline-flex; gap: 2px; padding: 2px;
+  background: var(--seg-track); border-radius: 8px;
+}
+.seg button {
+  font-family: var(--font); font-size: 11px; color: var(--text-2);
+  background: none; border: 0; border-radius: 6px; padding: 5px 12px;
+  cursor: pointer; white-space: nowrap; transition: background .12s, color .12s;
+}
+.seg button:hover { color: var(--text-1); }
+.seg button.on {
+  background: var(--accent-soft); color: var(--accent); font-weight: 600;
+  box-shadow: inset 0 0 0 .5px var(--accent-fill);
+}
+/* 禁用态：不压 alpha（压了字就读不清），改为降饱和 + 保留 text-3 可读等级 */
+.seg.disabled { background: var(--inset); }
+.seg.disabled button { color: var(--text-3); cursor: default; }
+.seg.disabled button:hover { color: var(--text-3); }
+
+/* ---------- 舞台 ---------- */
+.stage { display: flex; justify-content: center; align-items: flex-start; gap: 34px; flex-wrap: wrap; }
+.screen { display: none; }
+.screen.on { display: flex; gap: 28px; align-items: flex-start; }
+
+/* 菜单栏示意（仅给 Popover 画面上方加一点上下文） */
+.menubar {
+  height: 24px; border-radius: 8px 8px 0 0; margin-bottom: -8px;
+  background: var(--panel); border: 1px solid var(--card-line); border-bottom: none;
+  display: flex; align-items: center; gap: 10px; padding: 0 10px;
+  font-size: 11px; color: var(--text-3);
+}
+.menubar .mb-fan { display: inline-flex; align-items: center; gap: 4px; color: var(--text-1); font-size: 11px; }
+.menubar .right { margin-left: auto; color: var(--text-3); }
+
+/* ---------- Popover ---------- */
+.popover {
+  width: 320px; background: var(--panel);
+  border: 1px solid var(--card-line); border-radius: 10px;
+  box-shadow: var(--shadow-win); padding: 14px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.po-head { display: flex; align-items: center; gap: 6px; }
+.po-head .name { font-size: 15px; font-weight: 600; }
+.po-head .stamp { margin-left: auto; font-size: 11px; color: var(--text-3); }
+.icon-btn {
+  width: 20px; height: 20px; display: grid; place-items: center;
+  background: none; border: 0; border-radius: 5px; cursor: pointer; color: var(--text-2);
+}
+.icon-btn:hover { background: var(--seg-track); color: var(--text-1); }
+
+.card {
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 8px; box-shadow: var(--shadow-card);
+}
+.card.pad { padding: 12px; }
+
+/* 风扇环 */
+.fanrow { display: flex; align-items: center; gap: 14px; }
+.ring { position: relative; width: 92px; height: 92px; flex: none; }
+.ring .num {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+}
+.ring .num b { font-size: 19px; font-weight: 500; letter-spacing: .2px; font-variant-numeric: tabular-nums; }
+.ring .num i { font-style: normal; font-size: 11px; color: var(--text-3); }
+.kv { display: grid; gap: 6px; }
+.kv div { display: flex; gap: 8px; align-items: baseline; }
+.kv span { font-size: 11px; color: var(--text-2); width: 30px; flex: none; }
+.kv b { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* 区块标题 */
+.sec-head { display: flex; align-items: center; gap: 8px; }
+.sec-head h3 { font-size: 11px; font-weight: 600; color: var(--text-2); }
+.sec-head .meta { margin-left: auto; font-size: 11px; color: var(--text-3); }
+
+/* 温度宫格：数值主色，状态只在指示物上 */
+.temps { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.temp {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 7px; padding: 7px 9px;
+}
+.temp .lbl { font-size: 11px; color: var(--text-2); }
+.temp .val { margin-left: auto; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.temp .val em { font-style: normal; font-size: 11px; color: var(--text-3); margin-left: 1px; }
+
+/* 状态指示物：形态 + 颜色双编码（不依赖颜色也能读出状态） */
+.ind { width: 8px; height: 8px; flex: none; position: relative; display: grid; place-items: center; }
+.ind.cool::before { content:""; width: 6px; height: 6px; border-radius: 50%; background: var(--temp-cool); }
+.ind.warm::before { content:""; width: 6px; height: 6px; border-radius: 50%; background: var(--temp-warm); }
+.ind.warm::after {
+  content:""; position: absolute; inset: -1px; border-radius: 50%;
+  border: 1px solid var(--temp-warm); opacity: .55;
+}
+.ind.hot::before {
+  content:""; width: 0; height: 0; border-left: 4.5px solid transparent;
+  border-right: 4.5px solid transparent; border-bottom: 8px solid var(--temp-hot);
+}
+.ind.none::before { content:""; width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); opacity: .5; }
+
+/* 展开行 */
+.expand {
+  display: flex; align-items: center; gap: 5px; width: 100%;
+  background: none; border: 0; padding: 2px 0; cursor: pointer;
+  font-family: var(--font); font-size: 11px; color: var(--accent);
+}
+.expand svg { width: 11px; height: 11px; transition: transform .15s; }
+.expand.open svg { transform: rotate(90deg); }
+.core-list { display: none; gap: 8px; }
+.core-list.open { display: grid; }
+.core-group { background: var(--inset); border-radius: 7px; padding: 8px 10px; }
+.core-group .gt { font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 5px; }
+.core-group .gr { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); padding: 2px 0; }
+.core-group .gr b { margin-left: auto; color: var(--text-1); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* 摘要条（规则 / 曲线接管中） */
+.statusbar {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 7px; padding: 7px 9px;
+}
+.statusbar .txt { font-size: 11px; font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; }
+.statusbar .txt.dim { font-weight: 400; color: var(--text-2); }
+.statusbar .act { margin-left: auto; }
+.link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-family: var(--font); font-size: 11px; color: var(--accent);
+}
+.link:hover { text-decoration: underline; }
+
+/* 底部 */
+.foot { display: flex; align-items: center; gap: 10px; }
+.foot .hint { font-size: 11px; color: var(--text-3); }
+.foot .actions { margin-left: auto; display: flex; gap: 10px; }
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font); font-size: 11px; color: var(--text-1);
+  background: var(--btn-bg); border: 1px solid var(--btn-line);
+  border-radius: 6px; padding: 5px 10px; cursor: pointer;
+  transition: background .12s;
+}
+.btn:hover { background: var(--accent-soft); border-color: var(--accent-fill); }
+.btn svg { width: 11px; height: 11px; }
+.btn.dim { color: var(--text-2); }
+
+/* ---------- 开关 ---------- */
+.switch {
+  width: 26px; height: 15px; border-radius: 8px; border: 0; padding: 0;
+  background: var(--text-3); opacity: .45; position: relative; cursor: pointer; flex: none;
+  transition: background .15s, opacity .15s;
+}
+.switch::after {
+  content:""; position: absolute; top: 1.5px; left: 1.5px;
+  width: 12px; height: 12px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 1.5px rgba(0,0,0,0.25); transition: transform .15s;
+}
+.switch.on { background: var(--accent-fill); opacity: 1; }
+.switch.on::after { transform: translateX(11px); }
+
+/* ---------- 提示条（界面轴：attention / error） ---------- */
+.banner {
+  display: flex; gap: 8px; padding: 9px 10px; border-radius: 8px;
+  background: var(--attention-soft); border: 1px solid color-mix(in srgb, var(--attention) 35%, transparent);
+}
+.banner .bt { font-size: 12px; font-weight: 600; color: var(--text-1); }
+.banner .bd { font-size: 11px; color: var(--text-2); line-height: 1.5; margin-top: 3px; }
+.banner .acts { display: flex; gap: 6px; margin-top: 8px; }
+.banner .ico { color: var(--attention); flex: none; }
+.banner.error { background: var(--error-soft); border-color: color-mix(in srgb, var(--error) 35%, transparent); }
+.banner.error .ico { color: var(--error); }
+
+/* ---------- 窗口类画布 ---------- */
+.window {
+  background: var(--panel); border: 1px solid var(--card-line);
+  border-radius: 10px; box-shadow: var(--shadow-win); overflow: hidden;
+}
+.titlebar {
+  height: 30px; display: flex; align-items: center; padding: 0 12px; gap: 8px;
+  border-bottom: 1px solid var(--card-line); background: var(--inset);
+}
+.lights { display: flex; gap: 6px; }
+.lights i { width: 10px; height: 10px; border-radius: 50%; background: var(--track); }
+.titlebar .t { margin: 0 auto; font-size: 11px; color: var(--text-2); }
+.wbody { padding: 16px; display: grid; gap: 14px; }
+
+.whead { display: flex; align-items: baseline; gap: 8px; }
+.whead h2 { font-size: 15px; font-weight: 600; }
+.whead .sub { font-size: 11px; color: var(--text-3); }
+.whead .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* 设置行 */
+.group { display: grid; gap: 10px; }
+.group > h3 { font-size: 11px; font-weight: 600; color: var(--text-2); }
+.group > .box {
+  background: var(--card); border: 1px solid var(--card-line); border-radius: 9px; overflow: hidden;
+}
+.srow {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-bottom: 1px solid var(--card-line);
+}
+.srow:last-child { border-bottom: 0; }
+.srow .meta b { display: block; font-size: 12px; font-weight: 500; }
+.srow .meta p { font-size: 11px; color: var(--text-2); margin-top: 2px; line-height: 1.45; }
+.srow .ctl2 { margin-left: auto; flex: none; display: flex; align-items: center; gap: 8px; }
+.locked { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-2); }
+
+/* 曲线 */
+.chart { width: 100%; height: auto; }
+.legend { display: flex; gap: 16px; font-size: 11px; color: var(--text-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.presets { display: flex; gap: 8px; }
+.preset {
+  flex: 1; text-align: left; font-family: var(--font); cursor: pointer;
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 7px; padding: 7px 9px; color: var(--text-1);
+}
+.preset b { display: block; font-size: 12px; font-weight: 500; }
+.preset span { display: block; font-size: 11px; color: var(--text-2); margin-top: 1px; }
+.preset.on { background: var(--accent-soft); border-color: var(--accent-fill); }
+.preset.on b { color: var(--accent); font-weight: 600; }
+
+/* 统计 chip */
+.stats { display: flex; gap: 8px; }
+.stat {
+  display: flex; align-items: baseline; gap: 6px;
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 7px; padding: 5px 9px;
+}
+.stat .k { font-size: 11px; color: var(--text-3); }
+.stat .v { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* 规则行 */
+.rule {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 9px; padding: 10px 12px;
+}
+.rule.triggered { border-color: var(--accent-fill); background: var(--accent-soft); }
+.rule .body { display: grid; gap: 3px; }
+.rule .top { display: flex; align-items: center; gap: 7px; }
+.rule .nm { font-size: 12px; font-weight: 600; }
+.rule .cond { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.rule .cond .arrow { color: var(--text-3); margin: 0 4px; }
+.rule .ops { margin-left: auto; display: flex; gap: 2px; }
+.rule .ops .icon-btn { width: 24px; height: 24px; }
+/* 关闭的规则：只弱化标题与指示物，正文保持可读（v1 是整行 opacity 0.62 → 文字掉到 3:1 以下） */
+.rule.off { background: var(--inset); box-shadow: none; }
+.rule.off .nm { color: var(--text-2); font-weight: 500; }
+.rule.off .cond { color: var(--text-3); }
+.pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 600; color: var(--accent);
+  background: var(--accent-soft); border-radius: 999px; padding: 1px 7px;
+}
+.pill svg { width: 9px; height: 9px; }
+
+/* ---------- 规格说明区 ---------- */
+.spec { width: 100%; max-width: 1160px; display: grid; gap: 18px; }
+.spec h2 { font-size: 15px; font-weight: 600; }
+.spec p.lead { font-size: 11px; color: var(--text-2); }
+.specgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.panel {
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 9px; padding: 14px; box-shadow: var(--shadow-card);
+}
+.panel h3 { font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 11px; }
+th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--card-line); }
+th { color: var(--text-3); font-weight: 500; }
+td.num { font-variant-numeric: tabular-nums; color: var(--text-2); }
+td b { font-weight: 500; color: var(--text-1); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; border: 1px solid var(--card-line); }
+ul.notes { margin: 0; padding-left: 16px; font-size: 11px; color: var(--text-2); line-height: 1.7; }
+ul.notes b { color: var(--text-1); font-weight: 500; }
+code { font-family: var(--mono); font-size: 10.5px; color: var(--text-2); }
+
+/* 变体对照 */
+.variants { display: grid; gap: 10px; width: 300px; }
+.variants > .vh { font-size: 11px; color: var(--text-3); }
+.variant {
+  background: var(--panel); border: 1px solid var(--card-line); border-radius: 9px;
+  padding: 10px; display: grid; gap: 8px;
+}
+.variant .vt { font-size: 11px; font-weight: 600; color: var(--text-2); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <b>FunFan · UI v2</b>
+    <span>明暗双主题 · 语义色分工 · 对比度实测达标</span>
+  </div>
+  <div class="ctl">
+    <span class="ctl-label">画面</span>
+    <div class="seg" id="screenSeg">
+      <button data-screen="status" class="on">状态</button>
+      <button data-screen="curve">曲线</button>
+      <button data-screen="rules">规则</button>
+      <button data-screen="settings">设置</button>
+    </div>
+    <span class="ctl-label" style="margin-left:8px">外观</span>
+    <div class="seg" id="themeSeg">
+      <button data-pref="system" class="on">跟随系统</button>
+      <button data-pref="light">浅色</button>
+      <button data-pref="dark">深色</button>
+    </div>
+  </div>
+</header>
+
+<main class="stage">
+
+  <!-- ======================= 状态（Popover） ======================= -->
+  <section class="screen on" id="screen-status">
+    <div style="width:320px">
+      <div class="menubar">
+        <span class="mb-fan">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"/><path d="M12 2c2.2 0 3.6 1.9 3 4-.4 1.4-1.3 2.5-2.2 3.3.9-.1 2-.4 3-.9 1.9-1 4.2-.3 4.7 1.9.5 2.2-1.2 4-3.4 3.8-1.5-.1-2.8-.8-3.7-1.6.3.9.9 1.9 1.7 2.7 1.5 1.5 1.3 3.9-.6 5-1.9 1.1-4.1 0-4.5-2.1-.3-1.5 0-2.9.6-4-.8.5-1.6 1.4-2.2 2.4-1.1 1.9-3.5 2.1-5 .4-1.5-1.7-.9-4.1 1.1-4.9 1.4-.6 2.9-.5 4-.1-.6-.7-1.6-1.4-2.7-1.8-2-.7-2.6-3-1.1-4.5C4.3 3.9 6.7 4 7.9 5.7c.9 1.2 1.1 2.7.9 3.9.6-.7 1.1-1.8 1.3-3C10.4 4 12 2 12 2Z" opacity=".9"/></svg>
+          36°
+        </span>
+        <span class="right">周四 13:04</span>
+      </div>
+
+      <div class="popover">
+        <!-- 头部 -->
+        <div class="po-head">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="var(--accent-fill)"><path d="M12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"/><path d="M12 2c2.2 0 3.6 1.9 3 4-.4 1.4-1.3 2.5-2.2 3.3.9-.1 2-.4 3-.9 1.9-1 4.2-.3 4.7 1.9.5 2.2-1.2 4-3.4 3.8-1.5-.1-2.8-.8-3.7-1.6.3.9.9 1.9 1.7 2.7 1.5 1.5 1.3 3.9-.6 5-1.9 1.1-4.1 0-4.5-2.1-.3-1.5 0-2.9.6-4-.8.5-1.6 1.4-2.2 2.4-1.1 1.9-3.5 2.1-5 .4-1.5-1.7-.9-4.1 1.1-4.9 1.4-.6 2.9-.5 4-.1-.6-.7-1.6-1.4-2.7-1.8-2-.7-2.6-3-1.1-4.5C4.3 3.9 6.7 4 7.9 5.7c.9 1.2 1.1 2.7.9 3.9.6-.7 1.1-1.8 1.3-3C10.4 4 12 2 12 2Z"/></svg>
+          <span class="name">FunFan</span>
+          <span class="stamp">刚刚更新</span>
+          <button class="icon-btn" title="设置">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.3a2 2 0 1 1-4 0v-.2A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.2A1.7 1.7 0 0 0 2.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 7 2.6h.3A1.7 1.7 0 0 0 8.5 1V1a2 2 0 1 1 4 0v.2A1.7 1.7 0 0 0 15 2.6"/></svg>
+          </button>
+        </div>
+
+        <!-- 风扇 -->
+        <div class="card pad">
+          <div class="fanrow">
+            <div class="ring">
+              <svg width="92" height="92" viewBox="0 0 92 92">
+                <circle cx="46" cy="46" r="38" fill="none" stroke="var(--track)" stroke-width="8"/>
+                <circle cx="46" cy="46" r="38" fill="none" stroke="var(--accent-fill)" stroke-width="8"
+                        stroke-linecap="round" stroke-dasharray="238.8" stroke-dashoffset="132"
+                        transform="rotate(-90 46 46)"/>
+              </svg>
+              <div class="num"><b>1840</b><i>RPM</i></div>
+            </div>
+            <div class="kv">
+              <div><span>目标</span><b>1840 RPM</b></div>
+              <div><span>区间</span><b>1000–4900</b></div>
+              <div><span>模式</span><b>手动</b></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 温度 -->
+        <div class="sec-head">
+          <h3>硬件温度</h3>
+          <span class="meta">107 个传感器</span>
+        </div>
+        <div class="temps">
+          <div class="temp"><span class="ind warm"></span><span class="lbl">CPU 均温</span><span class="val">68<em>°</em></span></div>
+          <div class="temp"><span class="ind cool"></span><span class="lbl">GPU 均温</span><span class="val">42<em>°</em></span></div>
+          <div class="temp"><span class="ind cool"></span><span class="lbl">SSD</span><span class="val">40<em>°</em></span></div>
+          <div class="temp"><span class="ind none"></span><span class="lbl">环境</span><span class="val" style="color:var(--text-3)">—</span></div>
+        </div>
+
+        <button class="expand" id="expandBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>
+          <span>展开各核心温度</span>
+        </button>
+        <div class="core-list" id="coreList">
+          <div class="core-group">
+            <div class="gt">Apple M4 · 4P + 6E</div>
+            <div class="gr"><span class="ind warm"></span>P 簇（18 探测点）<b>68.4°</b></div>
+            <div class="gr"><span class="ind cool"></span>E 簇（12 探测点）<b>54.1°</b></div>
+            <div class="gr"><span class="ind cool"></span>GPU（10 探测点）<b>42.6°</b></div>
+          </div>
+        </div>
+
+        <!-- 策略 -->
+        <div class="seg" id="strategySeg" style="width:100%">
+          <button style="flex:1">自动</button>
+          <button style="flex:1">固定</button>
+          <button style="flex:1" class="on">曲线</button>
+          <button style="flex:1">规则</button>
+        </div>
+
+        <div class="statusbar">
+          <span class="ind cool"></span>
+          <span class="txt">曲线接管中 · 1840 RPM</span>
+          <button class="link act">编辑曲线…</button>
+        </div>
+
+        <div class="foot">
+          <span class="hint">安全下限已抬升 2 次</span>
+          <span class="actions">
+            <button class="link" style="color:var(--text-2)">诊断</button>
+            <button class="link" style="color:var(--text-2)">退出</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态变体：这些是「只靠颜色分不清」的场合，用形态 + 容器加固 -->
+    <div class="variants">
+      <div class="vh">状态变体（同一套令牌下的其余状态）</div>
+
+      <div class="variant">
+        <div class="vt">A · 后台组件未就绪</div>
+        <div class="banner">
+          <svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 1 21h22L12 2Zm1 14h-2v2h2v-2Zm0-7h-2v5h2V9Z"/></svg>
+          <div>
+            <div class="bt">只能监控，还不能控制风扇</div>
+            <div class="bd">控制需要安装一个后台组件（只装一次）。FunFan 退出或合盖会立刻把风扇交还系统。</div>
+            <div class="acts">
+              <button class="btn">一键启用</button>
+              <button class="btn dim">设置…</button>
+            </div>
+          </div>
+        </div>
+        <div class="seg disabled" style="width:100%">
+          <button style="flex:1;pointer-events:none">自动</button>
+          <button style="flex:1;pointer-events:none">固定</button>
+          <button style="flex:1;pointer-events:none">曲线</button>
+          <button style="flex:1;pointer-events:none">规则</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-3)">禁用态不再靠 0.45 alpha 压灰，改为降饱和 + 保留 text-3 可读等级，文案仍然读得出来。</div>
+      </div>
+
+      <div class="variant">
+        <div class="vt">B · 温度过热（形态替换颜色）</div>
+        <div class="temps" style="grid-template-columns:1fr">
+          <div class="temp"><span class="ind hot"></span><span class="lbl">CPU 均温</span><span class="val">78<em>°</em></span></div>
+        </div>
+        <div class="banner error">
+          <svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 1 21h22L12 2Zm1 14h-2v2h2v-2Zm0-7h-2v5h2V9Z"/></svg>
+          <div>
+            <div class="bt">CPU 已超过 75℃</div>
+            <div class="bd">当前按曲线全速运行（4900 RPM）· 持续 2 分钟</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="variant">
+        <div class="vt">C · 第三方程序在控制风扇</div>
+        <div class="banner">
+          <svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 1 21h22L12 2Zm1 14h-2v2h2v-2Zm0-7h-2v5h2V9Z"/></svg>
+          <div>
+            <div class="bt">Macs Fan Control 正在控制风扇</div>
+            <div class="bd">FunFan 已暂停接管，避免两边互相覆盖转速。退出对方软件后点「重新检测」。</div>
+            <div class="acts">
+              <button class="btn">重新检测</button>
+              <button class="btn dim">仍要接管</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 曲线 ======================= -->
+  <section class="screen" id="screen-curve">
+    <div class="window" style="width:640px">
+      <div class="titlebar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="t">FunFan · 温度曲线</div>
+      </div>
+      <div class="wbody">
+        <div class="whead">
+          <h2>温度曲线</h2>
+          <span class="pill">均衡</span>
+          <span class="right">
+            <span class="stats">
+              <span class="stat"><span class="k">最热</span><span class="v">68°</span></span>
+              <span class="stat"><span class="k">曲线</span><span class="v">2610</span></span>
+              <span class="stat"><span class="k">下发</span><span class="v">2610</span></span>
+            </span>
+          </span>
+        </div>
+        <p style="font-size:11px;color:var(--text-2)">拖动控制点改变映射；灰色斜纹区是安全下限，曲线拖不进去。</p>
+
+        <div class="card pad" style="padding:14px">
+          <svg class="chart" viewBox="0 0 600 250">
+            <defs>
+              <pattern id="hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="7" stroke="var(--text-3)" stroke-width="1" opacity=".35"/>
+              </pattern>
+            </defs>
+
+            <!-- 网格 -->
+            <g stroke="var(--card-line)" stroke-width="1">
+              <line x1="46" y1="20" x2="584" y2="20"/>
+              <line x1="46" y1="70" x2="584" y2="70"/>
+              <line x1="46" y1="120" x2="584" y2="120"/>
+              <line x1="46" y1="170" x2="584" y2="170"/>
+              <line x1="46" y1="220" x2="584" y2="220"/>
+              <line x1="46" y1="20" x2="46" y2="220"/>
+              <line x1="180" y1="20" x2="180" y2="220"/>
+              <line x1="314" y1="20" x2="314" y2="220"/>
+              <line x1="448" y1="20" x2="448" y2="220"/>
+            </g>
+
+            <!-- 安全下限禁区：中性斜纹 + 虚线边界，不再用红（红只留给「≥75℃」） -->
+            <path d="M46,220 L180,196 L314,150 L448,104 L584,60 L584,220 Z" fill="url(#hatch)"/>
+            <path d="M46,220 L180,196 L314,150 L448,104 L584,60" fill="none"
+                  stroke="var(--text-3)" stroke-width="1.2" stroke-dasharray="5 4" opacity=".8"/>
+            <text x="248" y="205" fill="var(--text-2)" font-size="11" font-family="var(--font)">安全下限（拖不进来）</text>
+
+            <!-- 曲线 -->
+            <path d="M46,204 L150,178 L254,132 L358,86 L462,52 L584,38 L584,220 L46,220 Z" fill="var(--accent-soft)"/>
+            <path d="M46,204 L150,178 L254,132 L358,86 L462,52 L584,38" fill="none"
+                  stroke="var(--accent-fill)" stroke-width="2" stroke-linejoin="round"/>
+
+            <!-- 当前温度：中性虚线，不抢语义色 -->
+            <line x1="254" y1="20" x2="254" y2="220" stroke="var(--text-1)" stroke-width="1" stroke-dasharray="3 4" opacity=".28"/>
+            <text x="260" y="32" fill="var(--text-2)" font-size="11" font-family="var(--font)">当前 68℃</text>
+
+            <!-- 控制点 -->
+            <g fill="var(--card)" stroke="var(--accent-fill)" stroke-width="2">
+              <circle cx="46" cy="204" r="5"/>
+              <circle cx="150" cy="178" r="5"/>
+              <circle cx="254" cy="132" r="7" stroke-width="2.5"/>
+              <circle cx="358" cy="86" r="5"/>
+              <circle cx="462" cy="52" r="5"/>
+            </g>
+
+            <!-- 坐标：11pt / text-2（原为 8pt tertiary） -->
+            <g fill="var(--text-2)" font-size="11" font-family="var(--font)">
+              <text x="10" y="24">4900</text>
+              <text x="10" y="74">3925</text>
+              <text x="10" y="124">2950</text>
+              <text x="10" y="174">1975</text>
+              <text x="10" y="224">1000</text>
+              <text x="40" y="240">30°</text>
+              <text x="172" y="240">50°</text>
+              <text x="306" y="240">70°</text>
+              <text x="440" y="240">90°</text>
+              <text x="560" y="240">105°</text>
+            </g>
+          </svg>
+
+          <div class="legend" style="margin-top:10px">
+            <span><i style="background:var(--accent-fill)"></i>目标转速曲线</span>
+            <span><i style="background:var(--text-3)"></i>安全下限（虚线 + 斜纹）</span>
+            <span><i style="background:var(--text-1);opacity:.35"></i>当前温度</span>
+          </div>
+        </div>
+
+        <div class="presets">
+          <button class="preset"><b>静音</b><span>75℃ 以下几乎不介入</span></button>
+          <button class="preset on"><b>均衡</b><span>60℃ 起提速，90℃ 全速</span></button>
+          <button class="preset"><b>性能</b><span>35℃ 起就给基础转速</span></button>
+        </div>
+
+        <div class="whead" style="gap:10px">
+          <button class="btn">在当前温度加点</button>
+          <button class="btn dim">删除选中点</button>
+          <span style="margin-left:auto;font-size:11px;color:var(--text-3)">5 个控制点</span>
+          <button class="btn">恢复均衡</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 规则 ======================= -->
+  <section class="screen" id="screen-rules">
+    <div class="window" style="width:560px">
+      <div class="titlebar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="t">FunFan · 自动调速规则</div>
+      </div>
+      <div class="wbody">
+        <div class="whead">
+          <h2>自动调速规则</h2>
+          <span class="right"><button class="btn">＋ 添加规则</button></span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="switch on" aria-label="规则接管风扇"></button>
+          <span style="font-size:12px">规则接管风扇</span>
+          <span class="pill"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>接管中 2940 RPM</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--text-3)">多规则同时触发取最大值</span>
+        </div>
+
+        <div class="rule triggered">
+          <button class="switch on"></button>
+          <div class="body">
+            <div class="top"><span class="nm">CPU 高温提速</span><span class="pill">触发中</span></div>
+            <div class="cond">CPU 最热 ≥ 75°<span class="arrow">→</span>60%（2940 RPM）<span class="arrow">·</span>迟滞 4°</div>
+          </div>
+          <div class="ops">
+            <button class="icon-btn" title="编辑"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4l10-10-4-4L4 16v4Z"/></svg></button>
+            <button class="icon-btn" title="删除"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></button>
+          </div>
+        </div>
+
+        <div class="rule">
+          <button class="switch on"></button>
+          <div class="body">
+            <div class="top"><span class="nm">GPU 高温提速</span></div>
+            <div class="cond">GPU 最热 ≥ 80°<span class="arrow">→</span>75%（3675 RPM）<span class="arrow">·</span>迟滞 4°</div>
+          </div>
+          <div class="ops">
+            <button class="icon-btn" title="编辑"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4l10-10-4-4L4 16v4Z"/></svg></button>
+            <button class="icon-btn" title="删除"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></button>
+          </div>
+        </div>
+
+        <div class="rule off">
+          <button class="switch"></button>
+          <div class="body">
+            <div class="top"><span class="nm">SSD 轻度散热</span></div>
+            <div class="cond">SSD 最热 ≥ 60°<span class="arrow">→</span>40%（1960 RPM）<span class="arrow">·</span>迟滞 2°</div>
+          </div>
+          <div class="ops">
+            <button class="icon-btn" title="编辑"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4l10-10-4-4L4 16v4Z"/></svg></button>
+            <button class="icon-btn" title="删除"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></button>
+          </div>
+        </div>
+
+        <p style="font-size:11px;color:var(--text-3);line-height:1.5">
+          任意规则都会经过安全下限抬升，不会低于系统最小 1000 RPM。编辑 / 删除成组固定在右端、与左侧开关隔开 12pt 以上，减少误触；关闭的规则只弱化标题，条件与动作仍然可读。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= 设置 ======================= -->
+  <section class="screen" id="screen-settings">
+    <div class="window" style="width:540px">
+      <div class="titlebar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <div class="t">FunFan · 设置</div>
+      </div>
+      <div class="wbody">
+        <div class="whead">
+          <h2>设置</h2>
+          <span class="right"><span style="font-size:11px;color:var(--text-3)">1.4.2 (231)</span></span>
+        </div>
+
+        <div class="group">
+          <h3>外观</h3>
+          <div class="box">
+            <div class="srow">
+              <div class="meta">
+                <b>主题</b>
+                <p>跟随系统时随 macOS 明暗实时切换；手动覆盖只影响 FunFan 自己的窗口，不改系统设置。</p>
+              </div>
+              <div class="ctl2">
+                <div class="seg" id="themeSegInline">
+                  <button data-pref="system" class="on">跟随系统</button>
+                  <button data-pref="light">浅色</button>
+                  <button data-pref="dark">深色</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>通用</h3>
+          <div class="box">
+            <div class="srow">
+              <div class="meta"><b>登录时启动</b><p>注册为登录项，开机后在菜单栏自动运行</p></div>
+              <div class="ctl2"><button class="switch on"></button></div>
+            </div>
+            <div class="srow">
+              <div class="meta"><b>菜单栏显示温度</b><p>在图标右侧显示最热传感器温度；关闭后只保留图标</p></div>
+              <div class="ctl2"><button class="switch on"></button></div>
+            </div>
+            <div class="srow">
+              <div class="meta"><b>退出 / 合盖时返还系统自动</b><p>始终开启：任何退出路径都不会把风扇留在手动转速</p></div>
+              <div class="ctl2">
+                <span class="locked">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+                  始终开启
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>风扇控制组件</h3>
+          <div class="box">
+            <div class="srow">
+              <div class="meta"><b>特权后台组件</b><p>已由系统登记并在运行，升级 App 无需重新授权</p></div>
+              <div class="ctl2"><button class="btn dim">卸载</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>诊断</h3>
+          <div class="box">
+            <div class="srow">
+              <div class="meta"><b>硬件自检</b><p>逐项检查 SMC 访问、温度键可读率、风扇写入与 helper 状态</p></div>
+              <div class="ctl2"><button class="btn">运行</button></div>
+            </div>
+            <div class="srow">
+              <div class="meta"><b>完整诊断报告</b><p>复制机型、系统、SMC 能力逐项实测与日志尾部到剪贴板</p></div>
+              <div class="ctl2"><button class="btn">复制</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="banner error">
+          <svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 1 21h22L12 2Zm1 14h-2v2h2v-2Zm0-7h-2v5h2V9Z"/></svg>
+          <div>
+            <div class="bt">后台组件已安装，但当前没连上</div>
+            <div class="bd">刚装好通常几秒内会自动重连。点「硬件自检」可看到具体原因。</div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>关于</h3>
+          <div class="box">
+            <div class="srow" style="align-items:flex-start">
+              <div class="meta">
+                <b>免责声明</b>
+                <p>本工具通过 AppleSMC 直接写入风扇目标转速。所有写入都会先收敛到系统区间与动态安全下限，且绝不发送 0 RPM；但底层接口未公开，系统升级后可能失效。请自行承担使用风险。</p>
+                <p style="color:var(--text-3);margin-top:6px">FunFan 不收集任何数据；诊断报告只在你点击「复制」时生成，保存在本机。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ======================= 规格区 ======================= -->
+<div class="spec">
+  <div>
+    <h2>令牌与实测对比度</h2>
+    <p class="lead">数值为像素级实测（WCAG 2.1 相对亮度）。文字档门槛 4.5:1，图形档 3:1。深色为本项目现状值（已通过），浅色为本稿新增。</p>
+  </div>
+  <div class="specgrid">
+    <div class="panel">
+      <h3>颜色令牌</h3>
+      <table>
+        <tr><th>令牌</th><th>深色</th><th>底/卡片</th><th>浅色</th><th>底/卡片</th></tr>
+        <tr><td><b>text-1</b></td><td class="num">#f5f5f7</td><td class="num">15.6 / 13.1</td><td class="num">#1d1d1f</td><td class="num">14.3 / 16.8</td></tr>
+        <tr><td><b>text-2</b></td><td class="num">#a1a1a6</td><td class="num">6.6 / 5.6</td><td class="num">#5a5a5a</td><td class="num">5.8 / 6.9</td></tr>
+        <tr><td><b>text-3</b></td><td class="num">#96969b</td><td class="num">5.8 / 4.9</td><td class="num">#676767</td><td class="num">4.8 / 5.7</td></tr>
+        <tr><td><b>accent</b> 文字</td><td class="num">#46c8ff</td><td class="num">8.9 / 7.5</td><td class="num">#0a5f80</td><td class="num">6.0 / 7.1</td></tr>
+        <tr><td><b>accent-fill</b> 图形</td><td class="num">#46c8ff</td><td class="num">8.9 / 7.5</td><td class="num">#0b84b8</td><td class="num">3.6 / 4.2</td></tr>
+        <tr><td><b>temp-cool</b></td><td class="num">#4cd988</td><td class="num">9.4 / 7.9</td><td class="num">#136b37</td><td class="num">5.6 / 6.6</td></tr>
+        <tr><td><b>temp-warm</b></td><td class="num">#ffbd4b</td><td class="num">10.2 / 8.6</td><td class="num">#7a4a00</td><td class="num">6.3 / 7.5</td></tr>
+        <tr><td><b>temp-hot</b></td><td class="num">#ff6b6b</td><td class="num">6.1 / 5.2</td><td class="num">#b3261e</td><td class="num">5.5 / 6.5</td></tr>
+      </table>
+      <p style="font-size:11px;color:var(--text-3);margin-top:8px">对照现状：v1 四色在浅色底为 1.28–2.52（未达 4.5），本稿全部 ≥4.5（图形档 ≥3）。</p>
+    </div>
+
+    <div class="panel">
+      <h3>语义分工（一色一义）</h3>
+      <table>
+        <tr><th>轴</th><th>令牌</th><th>只允许出现在</th></tr>
+        <tr><td>温度</td><td><b>temp-cool / warm / hot</b></td><td>指示点、环、图表描边、拓扑方块</td></tr>
+        <tr><td>动作</td><td><b>accent</b>（文字）</td><td>可点击文案、链接式动作</td></tr>
+        <tr><td>动作</td><td><b>accent-fill</b>（图形）</td><td>选中底、曲线、环弧、焦点环、品牌</td></tr>
+        <tr><td>界面</td><td><b>attention</b></td><td>阻断 / 待办提示容器 + 图标</td></tr>
+        <tr><td>界面</td><td><b>error</b></td><td>失败原因、不可恢复错误</td></tr>
+      </table>
+      <ul class="notes" style="margin-top:10px">
+        <li>数值<b>永远是 text-1</b>，状态只由指示物承担 —— 解决「一切正常=全绿」导致颜色无信息、且压低数值层级的问题。</li>
+        <li>状态<b>不只靠颜色</b>：正常=实心点，偏高=点+外环，过热=三角。色觉障碍下仍可分。</li>
+        <li>温度色<b>不再出现在按钮和提示条</b>；提示条只用 attention / error，两套标尺不混。</li>
+      </ul>
+    </div>
+
+    <div class="panel">
+      <h3>字号刻度（v1 13 档 → v2 4 档 + 数值档）</h3>
+      <table>
+        <tr><th>用途</th><th>规格</th><th>颜色</th></tr>
+        <tr><td>窗口 / 区块主标题</td><td class="num">15 / 600</td><td>text-1</td></tr>
+        <tr><td>分组标题</td><td class="num">11 / 600</td><td>text-2（不再用 tertiary）</td></tr>
+        <tr><td>正文 / 行标题</td><td class="num">12 / 400–500</td><td>text-1</td></tr>
+        <tr><td>元信息 / 说明</td><td class="num">11 / 400（下限）</td><td>text-2 或 text-3</td></tr>
+        <tr><td>数值</td><td class="num">15–20 / 500 等宽数字</td><td>text-1</td></tr>
+      </table>
+      <ul class="notes" style="margin-top:10px">
+        <li>正文与元信息<b>不小于 11pt</b>；v1 有 24 处 ≤9pt（坐标轴 8pt、迟滞 9pt、传感器数 10pt）。</li>
+        <li>中文不用 <code>text-transform: uppercase</code>（对汉字无效），分组靠字重 + 位置建立。</li>
+      </ul>
+    </div>
+
+    <div class="panel">
+      <h3>卡片与层次</h3>
+      <ul class="notes">
+        <li><b>深色</b>：卡片 <code>#2a2a2e</code> + <code>rgba(255,255,255,.08)</code> 描边（v1 只有 5% 填充差，1.19:1）。</li>
+        <li><b>浅色</b>：白卡 + <code>rgba(0,0,0,.07)</code> 描边 —— 边界由描边承担，不再依赖填充差（v1 浅色卡片与底只差 1.10:1，视觉上会「飘」）。</li>
+        <li>设置分组不再用「10pt tertiary + uppercase」当标题，按钮统一为自绘 6pt 圆角，和 Popover 同源。</li>
+        <li>禁用态：整组降饱和 + 保留文案可读，不用 0.45 alpha 把字压到 1.5:1。</li>
+      </ul>
+    </div>
+
+    <div class="panel">
+      <h3>外观切换（要求 1 的落地）</h3>
+      <ul class="notes">
+        <li><b>跟随系统</b>：三态之一，默认值。系统明暗变化时即时生效，本稿已实现（改系统外观会自动跟随）。</li>
+        <li><b>手动覆盖</b>：只作用于 FunFan 自己的窗口与 Popover，<b>不改系统设置</b>，也不动菜单栏图标（避免浅色菜单栏配深色文字）。</li>
+        <li><b>切换时机</b>：改设置后<b>已打开的窗口立即跟随</b>，不需重开；Popover 打开状态下切换不闪、不改变高度。</li>
+        <li>实现侧建议：调色板由 <code>colorScheme</code> 环境解析（<code>Palette.dark / .light</code>），不要用 Assets 色彩集或 NSColor 动态色 —— 那两条走 <code>NSAppearance.current</code>，会让离屏走查再次看不到浅色。</li>
+        <li>离开工具链：<code>--render ... --scheme light</code> 应成为设计走查的必备开关。</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- 外观：system 走 matchMedia，手动覆盖则固定 ----------
+const root = document.documentElement;
+const mq = window.matchMedia('(prefers-color-scheme: light)');
+const params = new URLSearchParams(location.search);
+
+function applyPref(pref) {
+  root.dataset.pref = pref;
+  const resolved = pref === 'system' ? (mq.matches ? 'light' : 'dark') : pref;
+  root.dataset.theme = resolved;
+  document.querySelectorAll('[data-pref]').forEach(b => {
+    b.classList.toggle('on', b.dataset.pref === pref);
+  });
+}
+// 系统外观变化时就地切换（演示「跟随系统」的切换时机）
+mq.addEventListener('change', () => { if (root.dataset.pref === 'system') applyPref('system'); });
+
+document.querySelectorAll('#themeSeg button, #themeSegInline button').forEach(btn => {
+  btn.addEventListener('click', () => applyPref(btn.dataset.pref));
+});
+applyPref(params.get('theme') || 'system');
+
+// ---------- 画面切换 ----------
+document.querySelectorAll('#screenSeg button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#screenSeg button').forEach(b => b.classList.toggle('on', b === btn));
+    document.querySelectorAll('.screen').forEach(s => {
+      s.classList.toggle('on', s.id === 'screen-' + btn.dataset.screen);
+    });
+  });
+});
+const wantScreen = params.get('screen');
+if (wantScreen) {
+  const b = document.querySelector(`#screenSeg button[data-screen="${wantScreen}"]`);
+  if (b) b.click();
+}
+
+// ---------- 展开核心温度 ----------
+const expandBtn = document.getElementById('expandBtn');
+expandBtn.addEventListener('click', () => {
+  expandBtn.classList.toggle('open');
+  document.getElementById('coreList').classList.toggle('open');
+});
+
+// ---------- 其它交互演示 ----------
+document.querySelectorAll('#strategySeg button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#strategySeg button').forEach(b => b.classList.toggle('on', b === btn));
+  });
+});
+document.querySelectorAll('.switch').forEach(sw => {
+  sw.addEventListener('click', () => sw.classList.toggle('on'));
+});
+document.querySelectorAll('.presets .preset').forEach(p => {
+  p.addEventListener('click', () => {
+    document.querySelectorAll('.preset').forEach(x => x.classList.toggle('on', x === p));
+  });
+});
+document.querySelectorAll('.seg button').forEach(btn => {
+  if (btn.closest('#screenSeg') || btn.dataset.pref) return;
+  btn.addEventListener('click', () => {
+    btn.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+  });
+});
+</script>
+</body>
+</html>
