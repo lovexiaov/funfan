@@ -129,6 +129,14 @@ struct SettingsView: View {
             }
 
             SettingRow(
+                title: "键盘焦点环",
+                subtitle: "用 Tab 全键盘操作时，在当前焦点控件外画一圈提示；默认关闭，不影响键盘导航本身",
+                isLast: false
+            ) {
+                FunFanToggle(isOn: $settings.focusRingVisible, size: 24)
+            }
+
+            SettingRow(
                 title: "退出 / 合盖时返还系统自动",
                 subtitle: "始终开启：任何退出路径（正常退出、睡眠、合盖、helper 租约过期）都会把风扇交还系统，不会留在手动转速",
                 isLast: true

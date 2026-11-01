@@ -3,6 +3,7 @@ import Combine
 import AppKit
 import SwiftUI
 import ServiceManagement
+import FunFanCore
 
 /// 设置项：外观 + 登录启动 + 菜单栏显示内容。
 ///
@@ -10,7 +11,9 @@ import ServiceManagement
 /// 1. 外观三态（跟随系统 / 浅色 / 深色）落到窗口 `appearance`，
 ///    SwiftUI 侧的 `colorScheme` 随之改变，色令牌自动换套；
 /// 2. 登录启动走 `SMAppService`（macOS 13+ 的系统登录项 API）；
-/// 3. 菜单栏是否显示温度写进 `UserDefaults`，`AppDelegate` 每次刷新标题时读它。
+/// 3. 菜单栏是否显示温度写进 `UserDefaults`，`AppDelegate` 每次刷新标题时读它；
+/// 4. 键盘焦点环显隐写进 `UserDefaults`（`DisplayPreferences`），自绘控件的
+///    焦点环 `@AppStorage` 读同一个键，改完立即全窗口生效。
 ///
 /// 开发态（未打包成 .app）注册登录项必然失败，这里显式识别并说明原因，
 /// 而不是把系统错误码丢给用户。
@@ -66,6 +69,8 @@ final class SettingsStore: ObservableObject {
     static let showsTemperatureKey = "FunFan.menuBarShowsTemperature"
     static let appearanceKey = "FunFan.appearance"
 
+    /// 键盘焦点环的存储（键名与默认值在 `DisplayPreferences`，FunFanCore 可单测）。
+    static let focusRingVisibleKey = DisplayPreferences.focusRingVisibleKey
     @Published private(set) var loginItem: LoginItem = .disabled
     @Published private(set) var loginItemError: String?
 
@@ -90,6 +95,18 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    /// 键盘焦点环（自绘控件 Tab 聚焦时的蓝色描边），默认关闭。
+    ///
+    /// 读写都经过 `DisplayPreferences`，与 `FunFanFocusRing` 里的 `@AppStorage`
+    /// 监听同一个键：设置页一改，其他窗口的环立即同步。
+    @Published var focusRingVisible: Bool {
+        didSet {
+            guard focusRingVisible != oldValue else { return }
+            var prefs = DisplayPreferences(defaults: defaults)
+            prefs.focusRingVisible = focusRingVisible
+        }
+    }
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -105,6 +122,10 @@ final class SettingsStore: ObservableObject {
             defaults.set(true, forKey: Self.showsTemperatureKey)
         }
         self.showsMenuBarTemperature = defaults.bool(forKey: Self.showsTemperatureKey)
+
+        // 焦点环默认关闭（DisplayPreferences.defaultFocusRingVisible）：
+        // 只服务全键盘用户，不开箱打扰大多数人。
+        self.focusRingVisible = DisplayPreferences(defaults: defaults).focusRingVisible
         refreshLoginItem()
     }
 

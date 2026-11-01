@@ -1,4 +1,5 @@
 import SwiftUI
+import FunFanCore
 
 // 自绘控件的键盘焦点环。
 //
@@ -11,10 +12,11 @@ import SwiftUI
 // 焦点落到第一个可聚焦控件上，那个直角框就一直挂在界面上——套在圆角胶囊、
 // 圆角卡片外面明显错位，看起来像渲染缺陷。
 //
-// 处理原则：**不关闭键盘导航**。直接 `focusEffectDisabled()` 能让框消失，但全键盘
-// 用户就失去了「现在焦点在哪」的唯一提示，属于可访问性倒退。这里改为把焦点环画成
-// 控件自己的圆角形状，macOS 14+ 同时关掉系统矩形环避免叠两层；macOS 13 没有
-// `focusEffectDisabled()`，退化成系统环（不比现状更差）。
+// 处理原则：**默认隐藏，设置里可打开**（`FunFan.focusRingVisible`，默认关）。
+// 这是用户拍板的产品决策（2026-11-01）：焦点环只服务全键盘用户，普通鼠标用户
+// 看到按钮上常驻的蓝框只会当成渲染缺陷，宁可默认不画，也不让大多数人困惑。
+// 代价是全键盘用户开箱看不到焦点提示——设置里一行开关可以打开，键盘导航本身
+// 始终不被关闭。离屏走查（`--force-focus`）不受偏好影响，永远强制画出。
 
 extension View {
     /// 给自绘控件画符合自身形状的键盘焦点环。
@@ -38,6 +40,13 @@ private struct FunFanFocusRing: ViewModifier {
     @Environment(\.forceFocusRing) private var forced
     @Environment(\.palette) private var palette
 
+    /// 用户偏好（默认关）。走 `@AppStorage` 而不是注入 `SettingsStore`：
+    /// 焦点环散落在 Popover / 规则窗口 / 曲线窗口 / 设置窗口多个视图树里，
+    /// 逐层传 Store 太重；AppStorage 监听同一个 UserDefaults 键，
+    /// 设置页改开关后所有窗口的环立即同步。
+    @AppStorage(DisplayPreferences.focusRingVisibleKey) private var visible =
+        DisplayPreferences.defaultFocusRingVisible
+
     func body(content: Content) -> some View {
         content
             .focused($isFocused)
@@ -46,7 +55,9 @@ private struct FunFanFocusRing: ViewModifier {
                     // 焦点环是图形，走 accentFill（浅色下用深一点的蓝才够 3:1）
                     .strokeBorder(palette.accentFill, lineWidth: 2)
                     .padding(-outset)
-                    .opacity(isFocused || forced ? 1 : 0)
+                    // 走查强制（forced）优先于用户偏好——`--force-focus` 的目的
+                    // 就是检验环的形状与外扩，偏好关着也得画出来。
+                    .opacity(forced || (isFocused && visible) ? 1 : 0)
                     .allowsHitTesting(false)
             }
             .modifier(NativeFocusEffect())
