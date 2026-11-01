@@ -55,7 +55,7 @@ for arg in "$@"; do
     --incl-current)   INCL_CURRENT=true ;;
     --yes|-y)         ASSUME_YES=true ;;
     -h|--help)        sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "✗ 未知参数：$arg（--help 看用法）"; exit 2 ;;
+    *) echo "✗ 未知参数：${arg}（--help 看用法）"; exit 2 ;;
   esac
 done
 
@@ -72,10 +72,20 @@ warn() { printf '  %s!%s %s\n' "$Y" "$N" "$*"; }
 die()  { printf '\n%s✗ %s%s\n' "$R" "$*" "$N"; exit 1; }
 
 # ---- 身份：sudo 下 $HOME 是 /var/root，用户侧必须切回真实账号
-if [ "$(id -u)" -eq 0 ]; then
+if [ -n "${FUNFAN_OWNER:-}" ]; then
+  TARGET_USER="$FUNFAN_OWNER"
+  TARGET_HOME="$(eval echo "~${TARGET_USER}")"
+  IS_ROOT="$([ "$(id -u)" -eq 0 ] && echo true || echo false)"
+elif [ "$(id -u)" -eq 0 ]; then
   TARGET_USER="${SUDO_USER:-}"
+  # sudo 之外的提权路径（osascript 的 do shell script with administrator privileges）
+  # 不设 SUDO_USER，这时用控制台登录用户兜底，否则会把 root 当成目标用户、
+  # 把用户侧的偏好域清理全打到 /var/root 上。
   if [ -z "$TARGET_USER" ] || [ "$TARGET_USER" = "root" ]; then
-    die "检测不到发起 sudo 的账号。请以普通用户执行：sudo bash scripts/purge-legacy.sh --apply"
+    TARGET_USER="$(stat -f%Su /dev/console 2>/dev/null)"
+  fi
+  if [ -z "$TARGET_USER" ] || [ "$TARGET_USER" = "root" ]; then
+    die "检测不到登录账号。请指定：FUNFAN_OWNER=<用户名> bash scripts/purge-legacy.sh --apply"
   fi
   TARGET_HOME="$(eval echo "~${TARGET_USER}")"
   IS_ROOT=true
@@ -205,7 +215,7 @@ if $APPLY; then
   mkdir -p "$BACKUP_DIR" && ok "备份目录：$BACKUP_DIR"
   $IS_ROOT && chown -R "$TARGET_USER":staff "$REPO_ROOT/.build/legacy-purge-backup" 2>/dev/null
 else
-  skip "dry-run 不创建（apply 时会建在 $BACKUP_DIR）"
+  skip "dry-run 不创建（apply 时会建在 ${BACKUP_DIR}）"
 fi
 
 # ---- 2. 旧 daemon
