@@ -9,6 +9,9 @@ DerivedData/
 # 本地工具/会话数据（含 agent 记忆日志、渲染检查产物）
 .workbuddy/
 
+# 任务清单（个人工作台账，不属于交付物）
+tasks/
+
 # 运行期产物
 *.log
 
