@@ -33,6 +33,10 @@ FunFan 不是「风扇」工具，而是「接管风扇转速」的工具：曲�
   4. 对比度是生命线：叶根取深色与轮毂咬合，叶尖取亮色，远看仍有层次。
   5. 不烘焙大投影，靠留白 + 发丝边线立边界。
   6. 指针必须落在两片叶之间的空档里，否则和叶片糊成一根。
+  7. 复制叶片靠「转正方形画布」，画布半宽要按到圆心的真实距离算（R1 + pad），
+     不能按 bbox 的切比雪夫距离。按 bbox 算会小掉 18px，叶尖转到轴向时被画布
+     边界切掉，五片叶被切的比例各不相同 —— 肉眼看到的就是「每片叶形状不一样」。
+     `blade_uniformity_ppm()` 把它变成可断言的数字，生成前自动检查。
 
 --------------------------------------------------------------------------
 四、用法
@@ -50,7 +54,7 @@ import os
 import shutil
 import subprocess
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageStat
 
 CANVAS = 1024
 CX = CY = 512.0
@@ -311,8 +315,13 @@ def draw_fan(img, S, k, col):
         _vgradient(bh, col["blade_tip"], col["blade_root"], bw), (0, 0), lmask
     )
 
-    # 旋转用正方形画布（以圆心为中心），避免 expand 带来的坐标漂移
-    R = int(math.ceil(max(abs(v) for v in bx + by) + pad) * k) + 2
+    # 旋转用正方形画布（以圆心为中心），避免 expand 带来的坐标漂移。
+    #
+    # 半宽必须按「到圆心的真实距离」算，不能按 bbox 的切比雪夫距离 —— 叶尖在
+    # r=306 处，而 bbox 只给出 288；旋转后叶尖转到轴向时会被正方形边界切掉，
+    # 于是五片叶被切掉的比例各不相同（实测面积差 2.4%），看起来就是「每片叶
+    # 形状不一样」。这正是不该出现的偏差：SVG 端同一份路径旋转是没有裁剪的。
+    R = int(math.ceil((max(math.hypot(x, y) for x, y in blade) + pad) * k)) + 2
     spin = Image.new("RGBA", (2 * R, 2 * R), (0, 0, 0, 0))
     spin.paste(layer, (R + int(round(lx0 * k)), R + int(round(ly0 * k))))
     for i in range(N_BLADES):
@@ -364,6 +373,43 @@ def draw_fan(img, S, k, col):
         _circle(draw, R_HUB_CAP, fill=_rgb(col["hub_cap"]) + (255,), k=k)
 
 
+# ---- 自检 ----------------------------------------------------------------
+def blade_uniformity_ppm(ss=2):
+    """五片叶旋转后面积的最大偏差（ppm / 10000 = 百分比）。
+
+    旋转画布只要小了一点，不同角度的叶片被裁掉的比例就不同，肉眼看到的就是
+    「每片叶形状不一样」。这里把它变成一条可断言的数字，防止再犯。
+    """
+    S = CANVAS * ss
+    k = S / CANVAS
+    blade = blade_points()
+    bx = [p[0] for p in blade]
+    by = [p[1] for p in blade]
+    pad = 6.0
+    lx0, ly0 = min(bx) - pad, min(by) - pad
+    bw = int((max(bx) + pad - lx0) * k) + 1
+    bh = int((max(by) + pad - ly0) * k) + 1
+
+    layer = Image.new("L", (bw, bh), 0)
+    ImageDraw.Draw(layer).polygon(
+        [((x - lx0) * k, (y - ly0) * k) for x, y in blade], fill=255
+    )
+    R = int(math.ceil((max(math.hypot(x, y) for x, y in blade) + pad) * k)) + 2
+    spin = Image.new("L", (2 * R, 2 * R), 0)
+    spin.paste(layer, (R + int(round(lx0 * k)), R + int(round(ly0 * k))))
+
+    areas = []
+    for i in range(N_BLADES):
+        m = Image.new("L", (S, S), 0)
+        m.paste(
+            spin.rotate(-360.0 / N_BLADES * i, resample=Image.BICUBIC),
+            (int(CX * k) - R, int(CY * k) - R),
+        )
+        areas.append(int(ImageStat.Stat(m).sum[0]) // 255)
+    lo, hi = min(areas), max(areas)
+    return 10000.0 * (hi - lo) / max(1, hi), areas
+
+
 # ---- 渲染 ----------------------------------------------------------------
 def render(theme, size=1024, ss=RENDER_SCALE):
     col = THEMES[theme]
@@ -372,7 +418,9 @@ def render(theme, size=1024, ss=RENDER_SCALE):
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     draw_plate(img, S, k, col)
     draw_fan(img, S, k, col)
-    return img.resize((size, size), Image.LANCZOS)
+    # 必须在预乘 alpha 空间缩放：直接缩未预乘的 RGBA，透明区的 RGB 会被
+    # Lanczos 振铃放大成彩色噪点，在叶片 / 底板边缘留下一圈脏边。
+    return img.convert("RGBa").resize((size, size), Image.LANCZOS).convert("RGBA")
 
 
 # ---- SVG -----------------------------------------------------------------
@@ -496,6 +544,14 @@ def main():
 
     themes = [args.only] if args.only else ["light", "dark"]
     os.makedirs(args.variant_dir, exist_ok=True)
+
+    # 先自检：五片叶必须等大等形，否则说明旋转过程把叶片裁掉了
+    dev, areas = blade_uniformity_ppm()
+    print(f"[check] 五片叶面积 {areas} 最大偏差 {dev / 100:.3f}%")
+    if dev > 200:  # 0.02%
+        raise SystemExit(
+            "[错误] 五片叶面积不一致 → 旋转画布或裁切有问题，先修几何再说。"
+        )
 
     for t in themes:
         big = render(t, 1024)
