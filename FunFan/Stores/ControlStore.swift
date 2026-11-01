@@ -10,28 +10,9 @@ final class ControlStore: ObservableObject {
 
     // MARK: - 策略
 
-    enum Strategy: String, CaseIterable, Identifiable {
-        case automatic
-        case fixed
-        case curve
-        case rules
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .automatic: return "自动"
-            case .fixed: return "固定"
-            case .curve: return "曲线"
-            case .rules: return "规则"
-            }
-        }
-
-        /// 是否由本应用持续计算目标（需要更快的采样与规则/曲线引擎）。
-        var isAutomated: Bool {
-            self == .curve || self == .rules
-        }
-    }
+    /// 策略枚举定义在 `FunFanCore.ControlStrategy`：持久化与 UI 必须共用同一份
+    /// `rawValue`，放在 App 里就没法用单测把它钉住。
+    typealias Strategy = ControlStrategy
 
     enum HelperStatus: Equatable {
         case checking
@@ -49,13 +30,25 @@ final class ControlStore: ObservableObject {
     @Published var strategy: Strategy = .automatic {
         didSet {
             guard strategy != oldValue else { return }
+            // 恢复上次设置时不写回：值本来就是从磁盘读的，再写一遍没有意义，
+            // 而且此刻 helper 还没连上，apply() 会先弹一条「无法控制」的错误。
+            guard !isRestoringPreferences else {
+                mirroredStrategy = strategy
+                return
+            }
+            prefs.strategy = strategy
             if oldValue.isAutomated { teardownAutomation() }
             mirroredStrategy = strategy
             apply()
         }
     }
 
-    @Published var fixedRpm: Double = 2000
+    @Published var fixedRpm: Double = ControlPreferences.defaultFixedRpm {
+        didSet {
+            guard fixedRpm != oldValue, !isRestoringPreferences else { return }
+            prefs.fixedRpm = fixedRpm
+        }
+    }
 
     @Published private(set) var helperStatus: HelperStatus = .checking
     @Published private(set) var limits = FanLimits(minRpm: 1000, maxRpm: 4900)
@@ -84,6 +77,11 @@ final class ControlStore: ObservableObject {
     private let queue = DispatchQueue(label: "cn.lovexiaov.fun.fan.control", qos: .userInitiated)
     private var heartbeat: DispatchSourceTimer?
 
+    /// 上次设置的落盘入口。
+    private let prefs: ControlPreferences
+    /// 恢复期间抑制 `didSet` 的副作用（不写盘、不 apply）。
+    private var isRestoringPreferences = true
+
     /// 后台队列读取的镜像状态（避免跨线程读 `@Published`）。
     private var mirroredStrategy: Strategy = .automatic
     private var mirroredLimits = FanLimits(minRpm: 1000, maxRpm: 4900)
@@ -110,6 +108,20 @@ final class ControlStore: ObservableObject {
     private let heartbeatInterval: TimeInterval = 2
 
     // MARK: - 启动
+
+    /// 恢复上次的策略与固定转速。
+    ///
+    /// 为什么在 init 里恢复而不是等 bootstrap：分段控件与滑块的**首帧**就该是用户
+    /// 上次看到的样子，否则会先闪一下「自动 / 2000」再跳回去。
+    /// 真正的接管不在这里做——`bootstrap()` 连上 helper 之后才 apply，
+    /// 固不固定、能不能控，要等硬件区间和冲突检测都有结论。
+    init(preferences: ControlPreferences = ControlPreferences()) {
+        self.prefs = preferences
+        strategy = preferences.strategy
+        fixedRpm = preferences.fixedRpm
+        mirroredStrategy = strategy
+        isRestoringPreferences = false
+    }
 
     func bootstrap() {
         queue.async { [weak self] in
@@ -151,6 +163,13 @@ final class ControlStore: ObservableObject {
                         // 进程名单只用来解释原因，识别不到也照样拦。
                         self.conflictSource = RunningApps.fanControllerName()
                         self.message = "检测到其他程序正在控制风扇，已停止接管"
+                    }
+
+                    // 重启后把「固定」真正落回硬件。不做这一步，界面显示固定 3000 RPM，
+                    // 风扇却还挂在系统自动上——设置看起来恢复了，其实没有生效。
+                    // 曲线 / 规则不需要：它们在下一帧温度快照里自己评估、自己接管。
+                    if evidence.isEmpty, self.strategy == .fixed {
+                        self.apply()
                     }
                 }
             } catch {

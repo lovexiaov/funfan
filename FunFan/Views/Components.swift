@@ -1,4 +1,5 @@
 import SwiftUI
+import FunFanCore
 
 // 自建基础控件。
 //
@@ -142,7 +143,7 @@ struct FunFanButton: View {
     }
 }
 
-extension ControlStore.Strategy {
+extension ControlStrategy {
     var help: String {
         switch self {
         case .automatic: return "完全交给 macOS 控制风扇"
