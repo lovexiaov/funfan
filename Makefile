@@ -5,7 +5,7 @@
 
 SWIFT_FLAGS := --disable-sandbox
 
-.PHONY: help build release test run run-app app sign-info notarize notary-check dmg publish publish-unsigned publish-dry doctor diagnose raw status spin install-helper uninstall-helper clean
+.PHONY: help build release test run run-app app icon sign-info notarize notary-check dmg publish publish-unsigned publish-dry doctor diagnose raw status spin install-helper uninstall-helper clean
 
 help:
 	@echo "FunFan 开发命令："
@@ -15,6 +15,7 @@ help:
 	@echo "  make run                启动菜单栏 GUI（裸二进制，开发态）"
 	@echo "  make app                打包成 dist/FunFan.app（登录项/helper/公证都要它）"
 	@echo "  make run-app            打包并启动 dist/FunFan.app"
+	@echo "  make icon               重新生成应用图标（SVG + PNG + icns，几何见 packaging/gen-icon.py）"
 	@echo "  make sign-info          看当前会自动选用的签名身份"
 	@echo "  make notary-check       体检：证书 / 公证凭据 / 硬运行时，缺什么说什么"
 	@echo "  make notarize           Developer ID 签名 + 公证 + 装订 + Gatekeeper 验收"
@@ -41,6 +42,9 @@ test:
 
 run: build
 	./.build/debug/FunFan
+
+icon:
+	python3 packaging/gen-icon.py
 
 app:
 	./scripts/build-app.sh

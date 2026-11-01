@@ -14,3 +14,6 @@ DerivedData/
 
 # 打包产物（.app / dmg / 公证中间件）
 dist/
+
+# 图标多尺寸预览（由 packaging/gen-icon.py 派生，跑 make icon 会重出）
+packaging/icon-variants/
