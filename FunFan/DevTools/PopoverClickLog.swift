@@ -23,10 +23,19 @@ enum PopoverClickLog {
         return base.appendingPathComponent("FunFan/popover-click.log")
     }()
 
+    /// 只在 `queue` 上读写：保证「会话头」一定是这次运行的第一行。
+    private static var headerWritten = false
+
     static func write(_ message: String) {
         guard isEnabled, let url else { return }
-        let line = "\(stamp()) \(message)\n"
         queue.async {
+            var text = ""
+            if !headerWritten {
+                headerWritten = true
+                text += "\(stamp()) \(LogSession.header)\n"
+            }
+            text += "\(stamp()) \(message)\n"
+            let data = Data(text.utf8)
             let manager = FileManager.default
             try? manager.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -35,9 +44,9 @@ enum PopoverClickLog {
             if let handle = try? FileHandle(forWritingTo: url) {
                 defer { try? handle.close() }
                 _ = try? handle.seekToEnd()
-                try? handle.write(contentsOf: Data(line.utf8))
+                try? handle.write(contentsOf: data)
             } else {
-                try? Data(line.utf8).write(to: url)
+                try? data.write(to: url)
             }
         }
     }
