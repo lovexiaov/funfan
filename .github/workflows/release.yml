@@ -130,7 +130,7 @@ jobs:
           # 否则「登录项与扩展」里那条后台项归不到 App 名下，卸载也清不掉。
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' dist/FunFan.app/Contents/Info.plist)"
           [ "$BUNDLE_ID" = "cn.lovexiaov.fun.fan" ] \
-            || { echo "::error::CFBundleIdentifier 是 $BUNDLE_ID，期望 cn.lovexiaov.fun.fan"; exit 1; }
+            || { echo "::error::CFBundleIdentifier 是 ${BUNDLE_ID}，期望 cn.lovexiaov.fun.fan"; exit 1; }
 
           # helper 必须在包内，否则「一键启用」在用户机上没有可装的东西
           test -x dist/FunFan.app/Contents/MacOS/FunFanHelper
