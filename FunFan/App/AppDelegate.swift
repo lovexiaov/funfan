@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var settingsWindow: NSWindow?
     private var popoverVisible = false
     private var clickMonitors: [Any] = []
+    private var signalSources: [DispatchSourceSignal] = []
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - 生命周期
@@ -35,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         setupStatusItem()
         setupPopover()
         observeSystemEvents()
+        installSignalHandlers()
 
         monitor.onSample = { [weak self] cpu in
             self?.updateTitle(cpu: cpu)
@@ -603,6 +605,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     // MARK: - 系统事件
+
+    /// SIGTERM / SIGINT 也要走正常退出路径。
+    ///
+    /// 不接管的话，`make run` 里按 Ctrl-C、或者 `kill <pid>`，进程是直接死的：
+    /// `applicationWillTerminate` 不执行 → 不调 `control.release()` → 风扇留在手动，
+    /// 只能等 helper 的租约 TTL（10 s）兜底返还。开发循环里这 10 s 很要命：
+    /// 紧接着重启的新实例会读到「手动 + 租约不是自己的」，被冲突检测判成第三方接管，
+    /// 于是「策略对但没接管」——看起来像另一个 bug。
+    ///
+    /// 用 `DispatchSourceSignal` 而不是在信号处理函数里直接调 AppKit：
+    /// 信号上下文里除了 async-signal-safe 的调用，别的都不保证能用。
+    private func installSignalHandlers() {
+        for sig in [SIGTERM, SIGINT] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler {
+                ControlJournal.write("收到信号 \(sig)：按正常退出处理（返还系统控制）")
+                NSApp.terminate(nil)
+            }
+            source.resume()
+            signalSources.append(source)
+        }
+    }
 
     private func observeSystemEvents() {
         let center = NSWorkspace.shared.notificationCenter
