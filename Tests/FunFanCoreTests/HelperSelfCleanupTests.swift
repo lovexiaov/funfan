@@ -113,10 +113,9 @@ final class HelperSelfCleanupTests: XCTestCase {
     }
 
     func testAppEmbeddedPlanCleansPlistBothLogLocationsAndBootsOut() {
-        // App 包内安装有两条注册路径：SMAppService（打包 plist 的日志落点是
-        // 旧域名 com.funfan.helper.log，且没有 /Library/LaunchDaemons plist）
-        // 和管理员授权直装（HelperConstants 路径，plist 指向 App 包内二进制）。
-        // 自清时 plist 与两处日志都试删，不猜当时走的是哪条。
+        // App 包内安装：现行各注册路径（SMAppService / 管理员授权直装）的日志
+        // 落点相同（新域名）；旧域名 com.funfan.helper.log 是改名前安装的机器
+        // 留下的残留。自清时 plist 与两处日志都试删，不存在的静默跳过。
         let plan = HelperSelfCleanup.plan(
             variant: .appEmbedded(
                 plistPath: "/Library/LaunchDaemons/\(label).plist",

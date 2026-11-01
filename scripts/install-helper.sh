@@ -25,6 +25,7 @@ LOG="/var/log/${LABEL}.log"
 LEGACY_LABEL="com.funfan.helper"
 LEGACY_BIN="/Library/PrivilegedHelperTools/${LEGACY_LABEL}"
 LEGACY_PLIST="/Library/LaunchDaemons/${LEGACY_LABEL}.plist"
+LEGACY_LOG="/var/log/${LEGACY_LABEL}.log"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "✗ 需要 root。请用 sudo 运行本脚本。"
@@ -59,10 +60,10 @@ fi
 
 cleanup_legacy() {
   if launchctl print "system/${LEGACY_LABEL}" >/dev/null 2>&1 \
-     || [ -e "$LEGACY_BIN" ] || [ -e "$LEGACY_PLIST" ]; then
+     || [ -e "$LEGACY_BIN" ] || [ -e "$LEGACY_PLIST" ] || [ -e "$LEGACY_LOG" ]; then
     echo "→ 清理改名前的残留 ${LEGACY_LABEL}…"
     launchctl bootout "system/${LEGACY_LABEL}" 2>/dev/null
-    rm -f "$LEGACY_PLIST" "$LEGACY_BIN"
+    rm -f "$LEGACY_PLIST" "$LEGACY_BIN" "$LEGACY_LOG"
     echo "  已清除"
   fi
 }

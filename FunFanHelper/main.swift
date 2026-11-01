@@ -229,7 +229,8 @@ enum HostWatchConfig {
             return .enabled(
                 variant: .appEmbedded(
                     plistPath: HelperConstants.installedPlistPath,
-                    // 两条注册路径的日志落点不同，都试删（不存在的静默跳过）
+                    // 当前各注册路径的日志落点相同；旧域名日志是改名前
+                    // 安装的机器留下的，一并试删（不存在的静默跳过）
                     logPaths: [HelperConstants.logPath, HelperConstants.Legacy.logPath]
                 ),
                 hostPath: hostPath

@@ -44,8 +44,8 @@ public enum HelperSelfCleanup {
         case script(binaryPath: String, plistPath: String, logPath: String)
         /// App 包内安装（授权直装 / SMAppService）：二进制随 App 包生灭。
         /// 可清理的：授权直装写下的 plist（SMAppService 安装没有这个文件，
-        /// 删不存在的路径是无害的 no-op）、各条注册路径的日志。
-        /// SMAppService 与授权直装的日志落点不同，调用方把两处都传进来。
+        /// 删不存在的路径是无害的 no-op）、日志。当前各注册路径的日志落点
+        /// 相同，调用方把现役与新域名（改名前安装的残留）两处都传进来。
         case appEmbedded(plistPath: String, logPaths: [String])
     }
 
