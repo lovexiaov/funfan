@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var curveWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var popoverVisible = false
+    private var dismissMonitors: [Any] = []
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - 生命周期
@@ -229,7 +230,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // MARK: - Popover
 
     private func setupPopover() {
-        popover.behavior = .transient
+        // 关闭时机必须自己管，不能用 `.transient`。
+        //
+        // `.transient` 的语义是「点到面板以外就关」，而菜单栏图标本身也算「以外」，
+        // 于是 AppKit 在**鼠标按下**那一刻就把面板关掉了；而 NSStatusItem 的 action
+        // 配的是 `.leftMouseUp`，等它跑起来读到的 `isShown` 已经是 false ——
+        // `togglePopover()` 误判成「用户要打开」，把刚关掉的面板又弹回来，
+        // 表现就是「图标只会显示、永远关不掉」（中间还闪一下）。
+        //
+        // 改成 `.applicationDefined` 后，AppKit 不再自作主张，点击归属由
+        // `handleClick(_:isGlobal:)` 判定：点图标交给 action 切换，点别处才关。
+        popover.behavior = .applicationDefined
         popover.animates = false
         popover.delegate = self
 
@@ -261,16 +272,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 self.popover.contentSize = size
             }
         }
+
+        installDismissMonitors()
     }
 
     @objc private func togglePopover() {
         guard let button = statusItem.button else { return }
         if popover.isShown {
-            popover.performClose(nil)
+            closePopover()
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             NSApp.activate(ignoringOtherApps: true)
         }
+    }
+
+    private func closePopover() {
+        guard popover.isShown else { return }
+        popover.performClose(nil)
+    }
+
+    // MARK: - Popover 关闭时机
+
+    /// 自己实现「点外面关闭」：面板是 `.applicationDefined`，不装这些监视器就永远关不掉。
+    ///
+    /// 本地监视器在事件派发给窗口**之前**回调，所以不会被 AppKit 抢先关面板，
+    /// 也就不会出现 `.transient` 那种「按下关、抬起又开」的时序事故。
+    private func installDismissMonitors() {
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
+
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            // 点到我们自己 App 的窗口：判定后原样放行，别吃掉控件点击
+            self?.handleClick(event, isGlobal: false)
+            return event
+        }) {
+            dismissMonitors.append(local)
+        }
+
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
+            // 点到别的 App / 桌面：全局监视器拿不到事件本身，一律当「点外面」
+            self?.handleClick(nil, isGlobal: true)
+        }) {
+            dismissMonitors.append(global)
+        }
+
+        // `.transient` 时 AppKit 顺手做了 ESC 关闭，改成自定义后得补回来
+        if let escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            if event.keyCode == 53 { self?.closePopover() }
+            return event
+        }) {
+            dismissMonitors.append(escape)
+        }
+    }
+
+    private func handleClick(_ event: NSEvent?, isGlobal: Bool) {
+        guard popover.isShown else { return }
+
+        // 别的 App 里的点击（全局监视器不交事件本体）：直接关
+        guard !isGlobal, let event else {
+            closePopover()
+            return
+        }
+
+        let window = event.window
+        // 面板内部：不动
+        if window === popover.contentViewController?.view.window { return }
+        // 菜单栏图标：左键交给 `togglePopover` 自己切换（它知道当前状态），右键当「取消」
+        if window === statusItem.button?.window {
+            if event.type == .rightMouseDown { closePopover() }
+            return
+        }
+        // 我们自己的其它窗口（规则 / 曲线 / 设置）
+        closePopover()
     }
 
     func popoverDidShow(_ notification: Notification) {
@@ -310,6 +382,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // MARK: - 规则窗口
 
     private func showRulesWindow() {
+        // 面板改成 `.applicationDefined` 后不再「一失焦就自己关」，
+        // 从这里跳出去开窗时必须顺手关掉，否则面板会赖在菜单栏下面。
+        closePopover()
         if let window = rulesWindow {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -334,6 +409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // MARK: - 曲线窗口
 
     private func showCurveWindow() {
+        closePopover()
         if let window = curveWindow {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -358,6 +434,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // MARK: - 设置窗口
 
     private func showSettingsWindow() {
+        closePopover()
         if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -388,6 +465,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func observeSystemEvents() {
         let center = NSWorkspace.shared.notificationCenter
+
+        // 切换到别的 App（⌘Tab / Mission Control）时关掉面板。
+        // `.transient` 原本由 AppKit 负责，现在归我们自己：全局鼠标监视器只能覆盖
+        // 「点一下」这一种离开方式，纯键盘切走得靠这条通知兜住。
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.closePopover()
+        }
 
         // 用户去「系统设置 → 登录项与扩展」批准后台项后会切回来，
         // 这时必须重读一次状态，否则设置页一直停在「待批准」。

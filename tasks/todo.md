@@ -319,5 +319,31 @@
 
 ---
 
+## M8 · 菜单栏图标点击切换（2026-11-01）
+
+> 背景：用户报「点菜单栏图标只能在显示/隐藏之间切换」没做到——实际表现是**只会显示、关不掉**。
+
+- 根因（时序，不是判断逻辑）：`popover.behavior = .transient` 的语义是「点到面板以外就关」，
+  而**菜单栏图标本身也算「以外」**，AppKit 在**鼠标按下**时就把面板关了；偏偏
+  `NSStatusItem` 的 action 配的是 `.leftMouseUp`。等 `togglePopover()` 跑起来，
+  `popover.isShown` 已经是 `false`，于是它误判成「用户要打开」，把刚关掉的面板又弹回来。
+  `if isShown { close } else { show }` 这段本身没错，错在它读到的状态被 AppKit 提前改了。
+- 修法：关闭时机收归自己，不再赌 AppKit 时序。
+  - `behavior` 改 `.applicationDefined`（AppKit 不再自作主张）。
+  - `installDismissMonitors()`：本地监视器（`.leftMouseDown/.rightMouseDown`）按「点的是谁」判定
+    ——面板内部不动、图标本身放行给 action 切换（右键直接关）、我们自己的其它窗口直接关；
+    全局监视器覆盖「点到别的 App / 桌面」；`.keyDown` 补回 ESC 关闭。
+  - `didResignActiveNotification` 补 ⌘Tab / Mission Control 这类纯键盘离开。
+  - `showRulesWindow / showCurveWindow / showSettingsWindow` 入口显式 `closePopover()`：
+    `.transient` 原本靠失焦自动关，改自定义后必须自己补，否则面板赖在菜单栏下面。
+- 顺带修掉 `scripts/purge-legacy.sh` 两处 `$VAR` 紧跟中文（第 58、218 行）——
+  上个提交把这个红灯带进了 `ScriptSyntaxTests`（bash 3.2 在 UTF-8 locale 下会把全角括号
+  首字节当变量名的一部分），改成 `${VAR}`。
+- Verify：`make build` 0 错误；`make test` 291 全绿（含修好的 ScriptSyntaxTests）。
+  点击行为属真机可视项（agent 沙箱内 GUI 进程会被 SIGKILL），需用户终端 `make app` 后目检：
+  点图标开 → 再点同一位置关 → 点面板外关 → 右键图标关 → ESC 关。
+
+---
+
 ## 完成判据（全量）
 满足 `docs/SPEC-FunFan.md` §8 全部 12 条 Success Criteria；`make test` 全绿（单测 ≥80% 覆盖）；`make build` 产出可分发 app。
