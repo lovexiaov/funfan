@@ -392,6 +392,56 @@
   - 遗留：`--log-popover` 保留（默认关闭、不写盘），以后 UI 时序问题直接用。
     取证日志会持续追加，不需要时删 `~/Library/Application Support/FunFan/popover-click.log` 即可。
 
+## M9 · 策略「重启后变回自动」（2026-11-01）
+
+> 背景：用户报「每次重启，策略都恢复到『自动』」。上一个提交 `d786076` 已经加过持久化，
+> 所以这次不是「没存」，而是**存的东西被人改掉了**。
+
+- 排查顺序（都有实测，不是推理）：
+  1. `ControlPreferences` 读写本身没问题：`--probe-prefs write` 在 debug / release / 打包后的
+     `cn.lovexiaov.fun.fan` 域里都能把 `fixed` 写进去再读回来。
+  2. 非 bundle 进程（`.build/debug/FunFan`）落在进程名域 `FunFan`，打包后落在 bundle id 域，
+     两者互不相干——这也是「开发时看着有值、装上就没了」这类假象的常见来源，但本例不是。
+  3. 打包域里出现过**没人操作也会变**的现场证据：`FunFan.controlStrategy` 在 15 分钟内
+     从 `curve` 自己变成 `automatic`。
+- 根因（两处，同一性质）：**运行时故障被当成用户意图写回磁盘**。
+  1. `startHeartbeat()` 的失败分支直接 `self.strategy = .automatic`。租约失败的触发条件全在
+     运行时：helper 重启、XPC 超时（3 s）、机器忙着编译、睡眠唤醒、甚至**我们自己刚
+     `restoreAuto`**（helper 侧 `restore()` 会把租约清成 `nil`，下一次心跳必然返回 false）。
+     一旦落盘成 `automatic`，用户下次重启就再也回不来——「每次重启都变成自动」正是这么来的。
+  2. `stopHeartbeat()` 只 `cancel()` 定时器，**不拦住已经在控制队列里排队的 tick**。
+     tick 跑到 helper 时租约刚被我们自己清掉 → `heartbeat()` 返回 false → 走同一条改写路径。
+     即「曲线正常返还系统自动」这种常规动作也能把策略改成自动。
+- 修法：
+  - 新增 `FunFanCore.ControlRecoveryPolicy`（纯逻辑、可单测）：2 → 4 → 8 → 16 → 30 s 有界退避。
+  - `handleLeaseLost(generation:)`：**不写 `prefs`**。只 `stopHeartbeat` + 重置引擎 +
+    尽力 `restoreAuto`（让 helper 清租约、风扇回自动）+ 按退避重连。
+    先返还很关键：不还就直接重连，会读到「手动 + 我们没租约」＝自己的残留，被冲突检测
+    误判成第三方接管，于是再也不敢下发（实测复现过）。
+  - `heartbeatGeneration` 代次：`stopHeartbeat()` 自增，排队中的 tick 一到就作废。
+  - 重连成功（`bootstrap` 无冲突 / 下发成功 / 开盖）→ `recovery.reset()`，下次从 2 s 起。
+  - `bootstrap()` 恢复接管的范围从 `.fixed` 扩到「所有非自动策略」（曲线/规则只是摆正文案，
+    真正接管仍等温度快照）。
+  - 新增 `FunFan --log-control`：`~/Library/Application Support/FunFan/control.log` 记录
+    启动恢复值、用户改策略、租约失败、计划重连/放弃、helper 可用性、退出。
+- Verify（实测输出）：
+  - `make test` **318 全绿**（含新增 `ControlRecoveryPolicyTests` 5 条）。
+  - `FunFan --probe-prefs lease`（模拟租约丢失，判定标准是策略与落盘值都必须仍是 `fixed`）：
+    ```
+    --- 模拟租约丢失 ---
+      t=0.5s store=fixed persisted=fixed isManual=false
+      t=2.6s store=fixed persisted=fixed isManual=true   ← 退避重连成功，自动拿回控制
+    PASS：租约失败没有改写用户策略
+    message = 已设为 2400 RPM
+    ```
+    修之前同一路径会输出 `store=automatic persisted=automatic`。
+  - `--probe-prefs launch fixed|curve`：预置持久值 → 复刻启动链 → 观察 12 s，策略与落盘值全程不变。
+- 遗留（未改，已知）：
+  - 上一版已经被改写成 `automatic` 的用户，需要**手动重选一次**策略；此后不会再被故障覆盖。
+  - 快速「退出→立刻重开」时，旧实例租约还有效（TTL 10 s），新实例会判成第三方接管并暂停下发。
+    症状是「策略对但没接管」，与本条不是同一问题；后续可加「上一实例残留」识别。
+  - 取证开关：`--log-control` / `--log-popover` 默认关闭，日志可随时删。
+
 ---
 
 ## 完成判据（全量）
