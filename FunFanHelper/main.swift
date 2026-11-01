@@ -171,7 +171,8 @@ final class HelperService: NSObject, FunFanHelperXPCProtocol {
 /// listener 代理：接受连接并对客户端做代码签名校验。
 final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
 
-    private let service = HelperService()
+    // 宿主监视（T20）需要拿到 service 来在自毁前返还风扇
+    let service = HelperService()
 
     /// 客户端签名要求：从**自己的签名**里取 Team ID 反推，而不是构建期注入常量。
     ///
@@ -208,9 +209,136 @@ final class ListenerDelegate: NSObject, NSXPCListenerDelegate {
     }
 }
 
+// MARK: - 宿主监视（T20：宿主消失自退场）
+
+/// daemon 对「宿主 App 是否还在」的监视配置。
+///
+/// 安装形态判定（按事实来源排优先级）：
+/// 1. daemon 自己长在 `.app/Contents/MacOS/` 里 → App 包内安装，
+///    宿主 = 反推出的包路径（自己的位置就是事实）；
+/// 2. 裸二进制 + 安装时记录了 `FUNFAN_APP_PATH` → 脚本直装，
+///    宿主 = 安装脚本记录的路径；
+/// 3. 其余（裸二进制且无记录，如 `make run` 直接喂的 CLI 场景）→
+///    不知道宿主在哪，不监视——猜一个路径出来比不监视更危险。
+enum HostWatchConfig {
+    case disabled
+    case enabled(variant: HelperSelfCleanup.InstallVariant, hostPath: String)
+
+    static func resolve(executablePath: String, environment: [String: String]) -> HostWatchConfig {
+        if let hostPath = HelperSelfCleanup.hostAppBundlePath(executablePath: executablePath) {
+            return .enabled(
+                variant: .appEmbedded(
+                    plistPath: HelperConstants.installedPlistPath,
+                    // 两条注册路径的日志落点不同，都试删（不存在的静默跳过）
+                    logPaths: [HelperConstants.logPath, HelperConstants.Legacy.logPath]
+                ),
+                hostPath: hostPath
+            )
+        }
+        if let recorded = environment["FUNFAN_APP_PATH"], !recorded.isEmpty {
+            return .enabled(
+                variant: .script(
+                    binaryPath: HelperConstants.installedBinaryPath,
+                    plistPath: HelperConstants.installedPlistPath,
+                    logPath: HelperConstants.logPath
+                ),
+                hostPath: recorded
+            )
+        }
+        return .disabled
+    }
+}
+
+/// 宿主消失自退场执行器。
+///
+/// 节奏：每 60 s 查一次，**连续 3 次**（约 3 分钟）不在才动手——
+/// 外置卷瞬时卸载、更新期换包都只会缺席一次，不值得拿 root 进程赌。
+/// 自毁顺序：先返还风扇（安全不变量优先于清理）→ 删文件 → bootout → exit(0)。
+final class HostWatchdog {
+    static let interval: TimeInterval = 60
+    static let threshold = 3
+
+    private let hostPath: String
+    private let plan: HelperSelfCleanup.Plan
+    private let service: HelperService
+    private let fileExists: (String) -> Bool
+    private var state = HostWatchState()
+    private var timer: DispatchSourceTimer?
+
+    init(
+        hostPath: String,
+        plan: HelperSelfCleanup.Plan,
+        service: HelperService,
+        fileExists: @escaping (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) {
+        self.hostPath = hostPath
+        self.plan = plan
+        self.service = service
+        self.fileExists = fileExists
+    }
+
+    func start(queue: DispatchQueue) {
+        let source = DispatchSource.makeTimerSource(queue: queue)
+        source.schedule(deadline: .now() + Self.interval, repeating: Self.interval)
+        source.setEventHandler { [weak self] in self?.check() }
+        source.resume()
+        timer = source
+    }
+
+    private func check() {
+        guard state.record(hostPresent: fileExists(hostPath), threshold: Self.threshold) else { return }
+        selfDestruct()
+    }
+
+    private func selfDestruct() {
+        timer?.cancel()
+        service.restoreAll(reason: "宿主已消失，自退场")
+        for step in plan.steps {
+            switch step {
+            case .deleteFile(let path):
+                try? FileManager.default.removeItem(atPath: path)
+            case .bootout(let label):
+                runBootout(label: label)
+            }
+        }
+        exit(0)
+    }
+
+    /// bootout 会给自己发 SIGTERM（signal handler 里返还风扇后 exit(0)），
+    /// 所以 waitUntilExit 可能永远等不到返回——两条路径的终点都是进程结束。
+    private func runBootout(label: String) {
+        let args = HelperSelfCleanup.bootoutArguments(label: label)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: args[0])
+        process.arguments = Array(args.dropFirst())
+        try? process.run()
+        process.waitUntilExit()
+    }
+}
+
 // MARK: - 入口
 
 let delegate = ListenerDelegate()
+
+// 宿主监视：只在知道宿主路径时启用（判据见 HostWatchConfig.resolve）
+if case .enabled(let watchVariant, let watchHostPath) = HostWatchConfig.resolve(
+    executablePath: URL(fileURLWithPath: CommandLine.arguments[0])
+        .resolvingSymlinksInPath()
+        .path,
+    environment: ProcessInfo.processInfo.environment
+) {
+    let hostWatchdog = HostWatchdog(
+        hostPath: watchHostPath,
+        plan: HelperSelfCleanup.plan(
+            variant: watchVariant,
+            label: HelperConstants.machServiceName
+        ),
+        service: delegate.service
+    )
+    hostWatchdog.start(
+        queue: DispatchQueue(label: "\(HelperConstants.identifierRoot).helper.host-watch")
+    )
+}
 
 // 进程退出必须返还——否则风扇会被留在手动模式
 signal(SIGTERM, SIG_IGN)

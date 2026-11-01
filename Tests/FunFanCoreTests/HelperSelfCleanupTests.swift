@@ -112,12 +112,14 @@ final class HelperSelfCleanupTests: XCTestCase {
         ])
     }
 
-    func testAppEmbeddedPlanCleansBothLogLocationsAndBootsOut() {
+    func testAppEmbeddedPlanCleansPlistBothLogLocationsAndBootsOut() {
         // App 包内安装有两条注册路径：SMAppService（打包 plist 的日志落点是
-        // 旧域名 com.funfan.helper.log）和管理员授权直装（HelperConstants.logPath）。
-        // 自清时两处都试删，不猜当时走的是哪条。
+        // 旧域名 com.funfan.helper.log，且没有 /Library/LaunchDaemons plist）
+        // 和管理员授权直装（HelperConstants 路径，plist 指向 App 包内二进制）。
+        // 自清时 plist 与两处日志都试删，不猜当时走的是哪条。
         let plan = HelperSelfCleanup.plan(
             variant: .appEmbedded(
+                plistPath: "/Library/LaunchDaemons/\(label).plist",
                 logPaths: [
                     "/var/log/cn.lovexiaov.fun.fan.helper.log",
                     "/var/log/com.funfan.helper.log",
@@ -126,8 +128,10 @@ final class HelperSelfCleanupTests: XCTestCase {
             label: label
         )
 
-        // 二进制和 plist 都随 App 包一起没了（或根本不存在），无从删起
+        // 二进制随 App 包一起没了，无从删起；plist 可能存在（授权直装）也可能
+        // 不存在（SMAppService），删不存在的路径交给执行侧静默跳过
         XCTAssertEqual(plan.steps, [
+            .deleteFile("/Library/LaunchDaemons/\(label).plist"),
             .deleteFile("/var/log/cn.lovexiaov.fun.fan.helper.log"),
             .deleteFile("/var/log/com.funfan.helper.log"),
             .bootout(label: label),

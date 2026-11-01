@@ -42,10 +42,11 @@ public enum HelperSelfCleanup {
     public enum InstallVariant: Equatable {
         /// 脚本直装：二进制、plist、日志都是独立文件，全部可自删。
         case script(binaryPath: String, plistPath: String, logPath: String)
-        /// App 包内安装（授权直装 / SMAppService）：二进制与 plist 随 App 包
-        /// 生灭，能删的只有日志。SMAppService 与授权直装的日志落点不同，
-        /// 调用方把两处都传进来，删不存在的文件是无害的。
-        case appEmbedded(logPaths: [String])
+        /// App 包内安装（授权直装 / SMAppService）：二进制随 App 包生灭。
+        /// 可清理的：授权直装写下的 plist（SMAppService 安装没有这个文件，
+        /// 删不存在的路径是无害的 no-op）、各条注册路径的日志。
+        /// SMAppService 与授权直装的日志落点不同，调用方把两处都传进来。
+        case appEmbedded(plistPath: String, logPaths: [String])
     }
 
     // MARK: - 清理步骤
@@ -75,8 +76,12 @@ public enum HelperSelfCleanup {
                 .deleteFile(logPath),
                 .bootout(label: label),
             ])
-        case .appEmbedded(let logPaths):
-            return Plan(steps: logPaths.map { Step.deleteFile($0) } + [.bootout(label: label)])
+        case .appEmbedded(let plistPath, let logPaths):
+            return Plan(steps:
+                [.deleteFile(plistPath)]
+                    + logPaths.map { Step.deleteFile($0) }
+                    + [.bootout(label: label)]
+            )
         }
     }
 

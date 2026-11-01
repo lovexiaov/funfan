@@ -2,9 +2,10 @@
 # FunFan 特权 helper 安装/卸载脚本
 #
 # 用法：
-#   sudo bash scripts/install-helper.sh           安装并加载
-#   sudo bash scripts/install-helper.sh uninstall 卸载
-#   sudo bash scripts/install-helper.sh status    查看运行状态
+#   sudo bash scripts/install-helper.sh                     安装并加载
+#   sudo bash scripts/install-helper.sh --app <App 路径>    安装并记录宿主（供自退场监视）
+#   sudo bash scripts/install-helper.sh uninstall           卸载
+#   sudo bash scripts/install-helper.sh status              查看运行状态
 #
 # 说明：这是 v0 的 launchd 直装方案（便于开发期验证）。
 # 正式发布应改为 App 内 SMAppService.daemon 注册（需 Xcode 工程 + Developer ID 签名）。
@@ -31,6 +32,30 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 action="${1:-install}"
+
+# 宿主监视（T20）：记录宿主 App 路径写进 plist 的 FUNFAN_APP_PATH，
+# daemon 检测到宿主被删后自退场（删自己的 plist/二进制/日志 + bootout）。
+# --app 显式指定优先；否则仓库里有 dist/FunFan.app 就用它；都没有就不记录，
+# daemon 侧收不到这个变量会自动关闭监视（不知道宿主在哪，猜比不猜更危险）。
+APP_PATH_ARG=""
+args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --app)
+      APP_PATH_ARG="${2:-}"
+      if [ $# -ge 2 ]; then shift 2; else shift; fi ;;
+    --app=*) APP_PATH_ARG="${1#*=}"; shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+action="${args[0]:-install}"
+
+WATCH_APP=""
+if [ -n "$APP_PATH_ARG" ]; then
+  WATCH_APP="$APP_PATH_ARG"
+elif [ -d "dist/FunFan.app" ]; then
+  WATCH_APP="$(cd dist/FunFan.app && pwd)"
+fi
 
 cleanup_legacy() {
   if launchctl print "system/${LEGACY_LABEL}" >/dev/null 2>&1 \
@@ -142,7 +167,7 @@ cat > "$PLIST" <<PLIST_EOF
     <dict>
         <key>FUNFAN_REQUIRE_SIGNATURE</key>
         <string>0</string>
-    </dict>
+$(if [ -n "$WATCH_APP" ]; then printf '        <key>FUNFAN_APP_PATH</key>\n        <string>%s</string>\n' "$WATCH_APP"; fi)    </dict>
     <key>StandardErrorPath</key>
     <string>${LOG}</string>
 </dict>
