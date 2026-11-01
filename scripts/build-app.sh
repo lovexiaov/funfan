@@ -5,6 +5,7 @@
 #   bash scripts/build-app.sh                      # 默认：自动选签名身份（没有就用 adhoc），产出 dist/FunFan.app
 #   bash scripts/build-app.sh --identity "Developer ID Application: Xxx (TEAMID)"
 #   bash scripts/build-app.sh --no-sign            # 只看包结构，不签名
+#   bash scripts/build-app.sh --debug              # 用 .build/debug 组装（开发态，行为与正式包等价）
 #   bash scripts/build-app.sh --skip-build         # 复用 .build/release 里已有的二进制
 #   bash scripts/build-app.sh --output /tmp/out    # 换输出目录
 #   bash scripts/build-app.sh --print-identity     # 只打印会自动选中的签名身份
@@ -32,6 +33,7 @@ HELPER_BIN_NAME="FunFanHelper"
 COPYRIGHT="Copyright © 2026 FunFan. 保留所有权利。"
 
 OUTPUT_DIR="dist"
+PROFILE="release"
 IDENTITY_ARG=""
 DO_SIGN=1
 SKIP_BUILD=0
@@ -51,6 +53,7 @@ while [ $# -gt 0 ]; do
     --output) OUTPUT_DIR="${2:-}"; shift 2 ;;
     --output=*) OUTPUT_DIR="${1#*=}"; shift ;;
     --no-sign) DO_SIGN=0; shift ;;
+    --debug) PROFILE="debug"; shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
     --no-hardened) HARDENED=0; shift ;;
     --print-identity) PRINT_IDENTITY_ONLY=1; shift ;;
@@ -111,15 +114,15 @@ BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 # MARK: - 构建
 
 if [ "$SKIP_BUILD" -eq 0 ]; then
-  step "编译 release（arm64）…"
+  step "编译 ${PROFILE}（arm64）…"
   # 本机 SPM 的 sandbox-exec 受限，必须 --disable-sandbox，否则连 Package.swift 都读不了。
-  swift build -c release --disable-sandbox || die "编译失败"
+  swift build -c "$PROFILE" --disable-sandbox || die "编译失败"
 else
-  step "跳过编译，复用 .build/release"
+  step "跳过编译，复用 .build/$PROFILE"
 fi
 
 for bin in FunFan "$HELPER_BIN_NAME"; do
-  [ -x ".build/release/$bin" ] || die "缺少 .build/release/${bin}，先跑一次不带 --skip-build 的构建"
+  [ -x ".build/$PROFILE/$bin" ] || die "缺少 .build/$PROFILE/${bin}，先跑一次不带 --skip-build 的构建"
 done
 
 # MARK: - 组装
@@ -131,8 +134,8 @@ mkdir -p "$APP/Contents/MacOS" \
          "$APP/Contents/Resources" \
          "$APP/Contents/Library/LaunchDaemons"
 
-cp ".build/release/FunFan" "$APP/Contents/MacOS/FunFan"
-cp ".build/release/$HELPER_BIN_NAME" "$APP/Contents/MacOS/$HELPER_BIN_NAME"
+cp ".build/$PROFILE/FunFan" "$APP/Contents/MacOS/FunFan"
+cp ".build/$PROFILE/$HELPER_BIN_NAME" "$APP/Contents/MacOS/$HELPER_BIN_NAME"
 chmod 755 "$APP/Contents/MacOS/FunFan" "$APP/Contents/MacOS/$HELPER_BIN_NAME"
 
 # Info.plist：从模板替换版本号/版权，再让 plutil 校验一遍语法。
@@ -222,6 +225,7 @@ fi
 echo
 ok "产物：$APP"
 echo "  版本：$SHORT_VERSION ($BUILD_NUMBER)"
+echo "  构建档：$PROFILE"
 echo "  签名：$IDENTITY"
 echo "  硬运行时：$([ "$HARDENED" -eq 1 ] && echo 开 || echo 关)"
 echo

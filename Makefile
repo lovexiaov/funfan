@@ -5,14 +5,15 @@
 
 SWIFT_FLAGS := --disable-sandbox
 
-.PHONY: help build release test run run-app app icon sign-info notarize notary-check dmg publish publish-unsigned publish-dry doctor diagnose raw status spin install-helper uninstall-helper purge-legacy clean
+.PHONY: help build release test run run-raw run-app app app-debug stop-running icon sign-info notarize notary-check dmg publish publish-unsigned publish-dry doctor diagnose raw status spin install-helper uninstall-helper purge-legacy clean
 
 help:
 	@echo "FunFan 开发命令："
 	@echo "  make build              调试构建（含 CLI / helper / probe / GUI）"
 	@echo "  make release            release 构建"
 	@echo "  make test               跑全部单测"
-	@echo "  make run                启动菜单栏 GUI（裸二进制，开发态）"
+	@echo "  make run                开发态启动（debug 二进制装进 .app，行为与正式包一致）"
+	@echo "  make run-raw            启动裸二进制（没有 bundle 身份，只用于快速调试）"
 	@echo "  make app                打包成 dist/FunFan.app（登录项/helper/公证都要它）"
 	@echo "  make run-app            打包并启动 dist/FunFan.app"
 	@echo "  make icon               重新生成应用图标（SVG + PNG + icns，几何见 packaging/gen-icon.py）"
@@ -41,8 +42,29 @@ release:
 test:
 	swift test $(SWIFT_FLAGS)
 
-run: build
+run: app-debug
+	@$(MAKE) --no-print-directory stop-running
+	@echo "→ 启动 dist/FunFan.app（debug 二进制；bundle 身份 / 偏好域 / 登录项与正式包一致）"
+	@open dist/FunFan.app
+
+# 裸二进制：没有 bundle 身份 —— 偏好落在进程名域 FunFan（不是 cn.lovexiaov.fun.fan），
+# 登录项与 SMAppService 安装走不了，日志也和打包版混在同一份文件里。
+# 只用来快速跑逻辑，别用它判断「用户看到的行为对不对」。
+run-raw: build
+	@echo "⚠️  裸二进制：偏好域 / 启动项 / bundle 身份都与正式包不同，行为差异不一定是 bug"
 	./.build/debug/FunFan
+
+app-debug:
+	./scripts/build-app.sh --debug
+
+# `open` 对已在运行的应用只是「激活」，不会换掉旧进程里的旧二进制 ——
+# 重新构建后不做这步，你测的还是上一次的代码。
+stop-running:
+	-@pids=$$(pgrep -x FunFan); if [ -n "$$pids" ]; then \
+	    echo "→ 结束已在运行的 FunFan（$$pids）…"; \
+	    kill -TERM $$pids; \
+	    for i in 1 2 3 4 5 6 7 8 9 10; do pgrep -x FunFan >/dev/null || break; sleep 0.2; done; \
+	  fi
 
 icon:
 	python3 packaging/gen-icon.py
@@ -51,7 +73,8 @@ app:
 	./scripts/build-app.sh
 
 run-app: app
-	open dist/FunFan.app
+	@$(MAKE) --no-print-directory stop-running
+	@open dist/FunFan.app
 
 sign-info:
 	@./scripts/build-app.sh --print-identity
