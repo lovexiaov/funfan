@@ -358,11 +358,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
-            // 点到别的 App / 桌面。全局监视器在别的进程里，拿不到事件本体，
-            // 也不会有后续 action 来切换，所以直接关。
-            guard let self, self.isPopoverVisible else { return }
-            PopoverClickLog.write("global down → close")
-            self.closePopover()
+            guard let self else { return }
+
+            // 菜单栏图标本身也会被这条监视器看到 —— 真机日志实证：同一个物理点击，
+            // 全局先到（因为菜单栏由系统托管，点击得先经过外面再转给我们），
+            // 本地事件 30~70 ms 后才到。若这里按「点外面」关掉面板，
+            // 紧接着到达的本地事件又会把它当「打开」——一次点击被处理成
+            // 「关 + 开」，表现就是点几下都关不掉。所以图标上的点击一律放行。
+            if PopoverClickLog.isEnabled {
+                PopoverClickLog.write(
+                    "global down onIcon=\(self.isCursorOnStatusItem) "
+                        + "mouse=\(NSEvent.mouseLocation) rect=\(String(describing: self.statusItemRectOnScreen))"
+                )
+            }
+            if self.isCursorOnStatusItem {
+                PopoverClickLog.write("global down onIcon → skip（交给本地事件切）")
+                self.notePendingIconClick()
+                return
+            }
+            guard self.isPopoverVisible else { return }
+            PopoverClickLog.write("global down → schedule close")
+            self.scheduleDismiss()
         }) {
             clickMonitors.append(global)
         }
@@ -387,6 +403,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
 
         if onIcon {
+            // 本地事件接住了这一下，别让看门狗再切一次
+            pendingIconClickAt = nil
+            // …也别让全局监视器为这一下安排的「关闭」落地（几何判断万一失手，
+            // 这条就把它救回来）
+            pendingDismiss?.cancel()
+            pendingDismiss = nil
             // 左键交给按钮的 action 切（辅助功能也走同一条路），这里不动手；
             // 右键当「取消」，直接关。
             if event.type == .rightMouseDown, shown { closePopover() }
@@ -405,10 +427,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// 事件报上来的 window 未必就是按钮自己那个。再按**屏幕坐标**兜一层 ——
     /// 落点在按钮矩形内就算点图标，与窗口身份无关。
     private func isStatusItemClick(_ event: NSEvent) -> Bool {
-        guard let button = statusItem.button, let window = button.window else { return false }
-        if event.window === window { return true }
-        let rectOnScreen = window.convertToScreen(button.convert(button.bounds, to: nil))
-        return rectOnScreen.contains(NSEvent.mouseLocation)
+        if event.window === statusItem.button?.window { return true }
+        return isCursorOnStatusItem
+    }
+
+    /// 光标此刻是否落在菜单栏图标上（屏幕坐标，与窗口身份无关）。
+    private var isCursorOnStatusItem: Bool {
+        guard let rect = statusItemRectOnScreen else { return false }
+        return rect.contains(NSEvent.mouseLocation)
+    }
+
+    private var statusItemRectOnScreen: NSRect? {
+        guard let button = statusItem.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
+
+    // MARK: - 图标点击的交接
+
+    /// 全局监视器安排的「延迟关闭」。不立刻关是为了给同一个物理点击的本地事件
+    /// 留一个反悔窗口（见 `handleMouseDown` 里的 `pendingDismiss?.cancel()`）。
+    /// 80 ms 远小于人能察觉的延迟，但大于实测 27~70 ms 的交接间隔。
+    private var pendingDismiss: DispatchWorkItem?
+
+    /// 全局监视器先看到的那一下图标点击，等本地事件接手；等不到就自己切。
+    ///
+    /// 需要它是为了兜住「只给了全局事件」这种系统差异：那种情况下没人来开/关，
+    /// 一次点击就白费了。正常路径下本地事件 30~70 ms 就到，会把这条标记清掉。
+    private var pendingIconClickAt: TimeInterval?
+
+    /// 交接窗口。真机实测全局比本地早 27~70 ms，给到 150 ms 有余量。
+    private static let iconHandoverWindow: TimeInterval = 0.15
+
+    private func scheduleDismiss() {
+        pendingDismiss?.cancel()
+        let delay = Self.globalDismissDelay
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.isPopoverVisible else { return }
+            PopoverClickLog.write("deferred global close → close")
+            self.closePopover()
+        }
+        pendingDismiss = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private static let globalDismissDelay: TimeInterval = 0.08
+
+    private func notePendingIconClick() {
+        let now = ProcessInfo.processInfo.systemUptime
+        pendingIconClickAt = now
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.iconHandoverWindow) { [weak self] in
+            guard let self, let marked = self.pendingIconClickAt else { return }
+            // 期间又来了新的一下：让它自己的定时器负责，这里不管。
+            guard ProcessInfo.processInfo.systemUptime - marked >= Self.iconHandoverWindow - 0.01 else { return }
+            self.pendingIconClickAt = nil
+            PopoverClickLog.write("handover: 本地事件没来，自己切")
+            self.togglePopover()
+        }
     }
 
     func popoverDidShow(_ notification: Notification) {
