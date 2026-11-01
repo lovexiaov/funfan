@@ -14,7 +14,7 @@ import FunFanCore
 // MARK: - 日志
 
 /// 统一日志出口。LaunchDaemon 下 stderr 被重定向到 StandardErrorPath
-/// （/var/log/com.funfan.helper.log），前台运行时直接打到终端。
+/// （/var/log/cn.lovexiaov.fun.fan.helper.log），前台运行时直接打到终端。
 func log(_ message: String) {
     FileHandle.standardError.write("[FunFanHelper] \(message)\n".data(using: .utf8)!)
 }
@@ -24,7 +24,7 @@ final class HelperService: NSObject, FunFanHelperXPCProtocol {
 
     private let smc: SMCService
     private let driver: FanHardwareDriver
-    private let queue = DispatchQueue(label: "com.funfan.helper.serial")
+    private let queue = DispatchQueue(label: "cn.lovexiaov.fun.fan.helper.serial")
 
     /// 租约：仅在有效期内维持手动。
     private var lease: ControlLease?
@@ -216,7 +216,7 @@ let delegate = ListenerDelegate()
 signal(SIGTERM, SIG_IGN)
 signal(SIGINT, SIG_IGN)
 
-let signalQueue = DispatchQueue(label: "com.funfan.helper.signals")
+let signalQueue = DispatchQueue(label: "cn.lovexiaov.fun.fan.helper.signals")
 var signalSources: [DispatchSourceSignal] = []
 for sig in [SIGTERM, SIGINT] {
     let source = DispatchSource.makeSignalSource(signal: sig, queue: signalQueue)

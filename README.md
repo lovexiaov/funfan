@@ -104,7 +104,7 @@ make install-helper                # 或脚本直装，每次都要 sudo
 sudo ./.build/release/funfanctl spin --rpm 2950 --seconds 6   # 写入验证，结束自动返还
 ```
 
-两种安装落在**同一个路径、同一个 label**（`com.funfan.helper`），所以彼此互斥；「一键安装」会自动 `bootout` 旧进程再覆盖，不需要先手动卸载。反过来，App 装过之后脚本会拒绝安装并说明原因（防止两个写手抢同一个 Mach service）。
+两种安装落在**同一个路径、同一个 label**（`cn.lovexiaov.fun.fan.helper`），所以彼此互斥；「一键安装」会自动 `bootout` 旧进程再覆盖，不需要先手动卸载。反过来，App 装过之后脚本会拒绝安装并说明原因（防止两个写手抢同一个 Mach service）。
 
 ## 命令行
 
@@ -150,7 +150,7 @@ FunFan.app/Contents/
   Info.plist                              LSUIElement=true（菜单栏常驻、无 Dock 图标）
   MacOS/FunFan                            GUI
   MacOS/FunFanHelper                      特权 helper 本体
-  Library/LaunchDaemons/com.funfan.helper.plist   给 SMAppService.daemon 用（BundleProgram 相对路径）
+  Library/LaunchDaemons/cn.lovexiaov.fun.fan.helper.plist   给 SMAppService.daemon 用（BundleProgram 相对路径）
 ```
 
 版本号唯一来源是仓库根的 `VERSION` 文件；`CFBundleVersion` 取 `git rev-list --count HEAD`，单调递增且可复现。

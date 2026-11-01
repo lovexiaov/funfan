@@ -15,12 +15,12 @@
 	    helper 会自己从签名里取 Team ID 生成客户端要求。
 	-->
 	<key>Label</key>
-	<string>com.funfan.helper</string>
+	<string>cn.lovexiaov.fun.fan.helper</string>
 	<key>BundleProgram</key>
 	<string>Contents/MacOS/FunFanHelper</string>
 	<key>MachServices</key>
 	<dict>
-		<key>com.funfan.helper</key>
+		<key>cn.lovexiaov.fun.fan.helper</key>
 		<true/>
 	</dict>
 	<key>RunAtLoad</key>
@@ -33,9 +33,9 @@
 	<!-- 让「登录项与扩展」里能把这条后台项归到 FunFan 名下，卸载 App 时一起清掉 -->
 	<key>AssociatedBundleIdentifiers</key>
 	<array>
-		<string>com.funfan.app</string>
+		<string>cn.lovexiaov.fun.fan</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>/var/log/com.funfan.helper.log</string>
+	<string>/var/log/cn.lovexiaov.fun.fan.helper.log</string>
 </dict>
 </plist>

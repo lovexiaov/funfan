@@ -13,11 +13,17 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
 
-LABEL="com.funfan.helper"
+LABEL="cn.lovexiaov.fun.fan.helper"
 BIN_SRC=".build/release/FunFanHelper"
 BIN_DST="/Library/PrivilegedHelperTools/${LABEL}"
 PLIST="/Library/LaunchDaemons/${LABEL}.plist"
 LOG="/var/log/${LABEL}.log"
+
+# 改名前的标识。旧 daemon 若还留着，它会和新 helper 同时写 SMC —— 风扇忽快忽慢、
+# 退出后不返还。所以每次安装都先把旧的连根清掉，不指望用户记得手动卸载。
+LEGACY_LABEL="com.funfan.helper"
+LEGACY_BIN="/Library/PrivilegedHelperTools/${LEGACY_LABEL}"
+LEGACY_PLIST="/Library/LaunchDaemons/${LEGACY_LABEL}.plist"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "✗ 需要 root。请用 sudo 运行本脚本。"
@@ -26,8 +32,18 @@ fi
 
 action="${1:-install}"
 
+cleanup_legacy() {
+  if launchctl print "system/${LEGACY_LABEL}" >/dev/null 2>&1 \
+     || [ -e "$LEGACY_BIN" ] || [ -e "$LEGACY_PLIST" ]; then
+    echo "→ 清理改名前的残留 ${LEGACY_LABEL}…"
+    launchctl bootout "system/${LEGACY_LABEL}" 2>/dev/null
+    rm -f "$LEGACY_PLIST" "$LEGACY_BIN"
+    echo "  已清除"
+  fi
+}
+
 # 与「系统授权安装」（App 内 SMAppService）互斥：两者都注册同名 label
-# com.funfan.helper，同时存在会互相抢 Mach service，表现为风扇忽然失控又忽然返还。
+# cn.lovexiaov.fun.fan.helper，同时存在会互相抢 Mach service，表现为风扇忽然失控又忽然返还。
 # 判据用运行中 daemon 的 program 路径：SMAppService 那份一定在 .app 包内。
 if [ "$action" = "install" ] && launchctl print "system/${LABEL}" >/dev/null 2>&1; then
   current_program="$(launchctl print "system/${LABEL}" 2>/dev/null | awk -F'= ' '/program =/{print $2; exit}')"
@@ -47,6 +63,7 @@ case "$action" in
     echo "→ 停止并卸载 ${LABEL}…"
     launchctl bootout "system/${LABEL}" 2>/dev/null
     rm -f "$PLIST" "$BIN_DST"
+    cleanup_legacy   # 顺带清掉改名前的残留，别让「卸载」只卸了一半
     echo "✓ 已卸载"
     exit 0
     ;;
@@ -78,6 +95,8 @@ if [ ! -x "$BIN_SRC" ]; then
   echo "→ 构建 release…"
   swift build -c release --disable-sandbox || exit 1
 fi
+
+cleanup_legacy
 
 echo "→ 安装 helper 到 ${BIN_DST}…"
 mkdir -p /Library/PrivilegedHelperTools

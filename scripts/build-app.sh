@@ -26,8 +26,8 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 APP_NAME="FunFan"
-BUNDLE_ID="com.funfan.app"
-HELPER_ID="com.funfan.helper"
+BUNDLE_ID="cn.lovexiaov.fun.fan"
+HELPER_ID="cn.lovexiaov.fun.fan.helper"
 HELPER_BIN_NAME="FunFanHelper"
 COPYRIGHT="Copyright © 2026 FunFan. 保留所有权利。"
 
@@ -143,7 +143,7 @@ sed -e "s/__VERSION__/$SHORT_VERSION/g" \
 plutil -lint "$APP/Contents/Info.plist" >/dev/null || die "Info.plist 语法错误"
 
 # 特权 helper 的 LaunchDaemon 描述：SMAppService.daemon 从这里读 BundleProgram。
-cp packaging/com.funfan.helper.plist "$APP/Contents/Library/LaunchDaemons/$HELPER_ID.plist"
+cp packaging/cn.lovexiaov.fun.fan.helper.plist "$APP/Contents/Library/LaunchDaemons/$HELPER_ID.plist"
 plutil -lint "$APP/Contents/Library/LaunchDaemons/$HELPER_ID.plist" >/dev/null \
   || die "LaunchDaemon plist 语法错误"
 

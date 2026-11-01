@@ -15,7 +15,7 @@
 |---|---|---|
 | A. 官方 `homebrew-cask`（GUI App） | ❌ | Developer ID 签名 + 公证（2026-09-01 起强制）；知名度门槛 75 stars / 30 forks（自提交 225 stars / 90 forks）；公开的版本化 Release + livecheck |
 | B. 自建 tap + cask | ❌（有证书后 ✅） | 同样的 Gatekeeper 墙（见 §2），与知名度无关 |
-| C. formula 分发 `funfanctl`（源码构建，不过 Gatekeeper） | ⚠️ 技术可行但无意义 | `funfanctl` 依赖特权 helper（XPC → `com.funfan.helper`）才碰得了 SMC，单装 CLI 没有功能 |
+| C. formula 分发 `funfanctl`（源码构建，不过 Gatekeeper） | ⚠️ 技术可行但无意义 | `funfanctl` 依赖特权 helper（XPC → `cn.lovexiaov.fun.fan.helper`）才碰得了 SMC，单装 CLI 没有功能 |
 
 ---
 
@@ -83,16 +83,16 @@ brew install --cask lovexiaov/tap/funfan
 ## 6. FunFan 专属 cask 技术要点
 
 - `depends_on macos: :ventura`（Info.plist `LSMinimumSystemVersion` = 13.0）。
-- **卸载 helper**：helper 走 SMAppService daemon（label `com.funfan.helper`，
+- **卸载 helper**：helper 走 SMAppService daemon（label `cn.lovexiaov.fun.fan.helper`，
   可执行文件在 App 包内，不在 `/Library/LaunchDaemons` 落盘 plist）。
-  cask 的 `uninstall launchctl:` 用 `launchctl bootout system/com.funfan.helper`
+  cask 的 `uninstall launchctl:` 用 `launchctl bootout system/cn.lovexiaov.fun.fan.helper`
   思路可行但**需真机实测**（bootout 系统域需要 root，brew 卸载默认无 sudo）。
   兜底：cask `uninstall` 加一段 `sudo: true` 的 script，或引导用户在
   App 设置页点「卸载组件」。此条是启用 tap 前必须验证的第一项。
 - **无自动更新器**：App 内没有 Sparkle，cask 不写 `auto_updates`，让
   `brew upgrade` 管（这正好是 Homebrew 用户预期）。
 - `zap` 路径清单（`brew generate-zap` 出稿后人工核对）：偏好、
-  Application Support、Caches、Saved State、`/var/log/com.funfan.helper.log`。
+  Application Support、Caches、Saved State、`/var/log/cn.lovexiaov.fun.fan.helper.log`。
 - DMG 结构已是标准「App + Applications 软链」，`app "FunFan.app"` 即可。
 
 ## 7. Cask 模板（`Casks/funfan.rb`，启用时按当版填 version/sha256）
@@ -116,16 +116,16 @@ cask "funfan" do
 
   app "FunFan.app"
 
-  uninstall quit:      "com.funfan.app",
-            launchctl: "com.funfan.helper", # SMAppService daemon，bootout 路径需实测
-            delete:    "/var/log/com.funfan.helper.log"
+  uninstall quit:      "cn.lovexiaov.fun.fan",
+            launchctl: "cn.lovexiaov.fun.fan.helper", # SMAppService daemon，bootout 路径需实测
+            delete:    "/var/log/cn.lovexiaov.fun.fan.helper.log"
 
   zap trash: [
-    "~/Library/Preferences/com.funfan.app.plist",
+    "~/Library/Preferences/cn.lovexiaov.fun.fan.plist",
     "~/Library/Application Support/FunFan",
-    "~/Library/Caches/com.funfan.app",
-    "~/Library/WebKit/com.funfan.app",
-    "~/Library/Saved Application State/com.funfan.app.savedState",
+    "~/Library/Caches/cn.lovexiaov.fun.fan",
+    "~/Library/WebKit/cn.lovexiaov.fun.fan",
+    "~/Library/Saved Application State/cn.lovexiaov.fun.fan.savedState",
   ]
 end
 ```

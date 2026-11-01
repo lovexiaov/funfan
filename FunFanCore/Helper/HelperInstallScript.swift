@@ -15,7 +15,7 @@ import Foundation
 public enum HelperInstallScript {
 
     /// 与 `scripts/install-helper.sh` 保持一致的日志落点，便于两套安装互查。
-    public static let logPath = "/var/log/com.funfan.helper.log"
+    public static var logPath: String { HelperConstants.logPath }
 
     /// LaunchDaemon plist。
     ///
@@ -106,6 +106,24 @@ public enum HelperInstallScript {
         [
             "/bin/launchctl bootout system/\(label) >/dev/null 2>&1 || true",
             "/bin/rm -f \(quoted(plistPath)) \(quoted(binaryPath))",
+        ]
+    }
+
+    /// 清理改名前的安装残留，必须跑在安装命令之前。
+    ///
+    /// 反域名标识从 `com.funfan.*` 换成 `cn.lovexiaov.fun.fan*` 之后，旧 label 的
+    /// daemon 不会被新流程覆盖 —— 它仍以 root 跑着、仍连着 SMC。两份写手并存，
+    /// 表现就是风扇转速忽快忽慢、App 退出后不返还。所以先杀掉再装。
+    ///
+    /// 全部带 `|| true`：旧机器上本来就没有这些文件，清不掉不该阻断安装。
+    public static func legacyCleanupCommands(
+        label: String,
+        binaryPath: String,
+        plistPath: String
+    ) -> [String] {
+        [
+            "/bin/launchctl bootout system/\(label) >/dev/null 2>&1 || true",
+            "/bin/rm -f \(quoted(plistPath)) \(quoted(binaryPath)) 2>/dev/null || true",
         ]
     }
 

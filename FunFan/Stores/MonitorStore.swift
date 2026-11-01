@@ -33,7 +33,7 @@ final class MonitorStore: ObservableObject {
 
     // MARK: - 内部
 
-    private let queue = DispatchQueue(label: "com.funfan.monitor", qos: .utility)
+    private let queue = DispatchQueue(label: "cn.lovexiaov.fun.fan.monitor", qos: .utility)
     private var timer: DispatchSourceTimer?
     private var smc: SMCService?
     private var monitor: SensorMonitor?

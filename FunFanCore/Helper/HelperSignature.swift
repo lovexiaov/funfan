@@ -6,7 +6,7 @@ import Foundation
 /// 那就等于把 root 的 SMC 写权限裸露给全系统。所以连接建立前必须校验客户端签名。
 ///
 /// 校验条件三件套：
-/// 1. `identifier "com.funfan.app"` —— 是本 App，不是别的东西复用同名服务；
+/// 1. `identifier "cn.lovexiaov.fun.fan"` —— 是本 App，不是别的东西复用同名服务；
 /// 2. `anchor apple generic` —— 证书链能上溯到 Apple（排除自签/adhoc）；
 /// 3. `certificate leaf[subject.OU] = "<TeamID>"` —— 同一个团队的签名，
 ///    防止别人拿自己的 Developer ID 签一个同样 bundle id 的 App 来冒充。
@@ -16,7 +16,10 @@ import Foundation
 public enum HelperSignature {
 
     /// 主 App 的 bundle 标识，与 `packaging/Info.plist` 里的 `CFBundleIdentifier` 一致。
-    public static let appBundleIdentifier = "com.funfan.app"
+    ///
+    /// 直接取 `HelperConstants.identifierRoot`：这里再写一遍字面量就会有两份真源，
+    /// 改名时漏掉一处，XPC 就连不上，而报错只会是「连接被拒」，极难定位。
+    public static var appBundleIdentifier: String { HelperConstants.identifierRoot }
 
     /// 生成 XPC 客户端签名要求串；`teamID` 为空（adhoc）时返回 nil。
     ///

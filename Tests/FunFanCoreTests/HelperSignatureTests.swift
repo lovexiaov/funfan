@@ -13,7 +13,7 @@ final class HelperSignatureTests: XCTestCase {
         XCTAssertNotNil(requirement)
 
         let text = requirement ?? ""
-        XCTAssertTrue(text.contains("identifier \"com.funfan.app\""),
+        XCTAssertTrue(text.contains("identifier \"cn.lovexiaov.fun.fan\""),
                       "缺少 bundle 标识约束：\(text)")
         XCTAssertTrue(text.contains("anchor apple generic"),
                       "缺少 Apple 证书链约束（adhoc/自签会被放进来）：\(text)")
@@ -45,6 +45,6 @@ final class HelperSignatureTests: XCTestCase {
     func testAppIdentifierMatchesBundleIdentifier() {
         // 这个常量必须与 packaging/Info.plist 的 CFBundleIdentifier 一致，
         // 否则正式包里 helper 会把真正的 App 拒之门外。
-        XCTAssertEqual(HelperSignature.appBundleIdentifier, "com.funfan.app")
+        XCTAssertEqual(HelperSignature.appBundleIdentifier, "cn.lovexiaov.fun.fan")
     }
 }

@@ -100,11 +100,11 @@ public struct SystemProbe: DiagnosticsProbing {
 
 /// helper 的安装路径（安装脚本、CLI、诊断三处共用同一份定义）。
 public enum HelperPaths {
-    /// Mach service 名沿用 XPC 合约里的定义，避免两处漂移。
-    public static let machServiceName = HelperConstants.machServiceName
-    public static let binary = "/Library/PrivilegedHelperTools/com.funfan.helper"
-    public static let plist = "/Library/LaunchDaemons/com.funfan.helper.plist"
-    public static let log = "/var/log/com.funfan.helper.log"
+    /// 全部转发到 XPC 合约里的那份定义，避免路径在多处漂移。
+    public static var machServiceName: String { HelperConstants.machServiceName }
+    public static var binary: String { HelperConstants.installedBinaryPath }
+    public static var plist: String { HelperConstants.installedPlistPath }
+    public static var log: String { HelperConstants.logPath }
 }
 
 /// `sysctl` 读取（失败返回 nil，不抛错）。

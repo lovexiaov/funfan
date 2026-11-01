@@ -19,7 +19,9 @@ import FunFanCore
 /// 两条路都走不通时才报错，并说清缺什么。
 final class HelperInstaller: ObservableObject {
 
-    static let daemonPlistName = "com.funfan.helper.plist"
+    /// 包内 `Contents/Library/LaunchDaemons/` 下的 daemon 描述文件名。
+    /// `SMAppService.daemon(plistName:)` 认的是文件名，必须和 build-app.sh 落盘的一致。
+    static let daemonPlistName = "\(HelperConstants.machServiceName).plist"
 
     @Published private(set) var status: HelperInstallStatus = .notFound
     @Published private(set) var error: String?
@@ -216,7 +218,12 @@ final class HelperInstaller: ObservableObject {
         // 注意：临时目录不能在这里 defer 删——授权是异步的，脚本要等用户输完密码
         // 才真正开始跑，提前删掉 plist 会让 cp 直接失败。删除挪到完成回调里。
 
-        let commands = HelperInstallScript.installCommands(
+        // 先清掉改名前的残留（旧 label 的 daemon 仍以 root 写 SMC），再装新的。
+        let commands = HelperInstallScript.legacyCleanupCommands(
+            label: HelperConstants.Legacy.machServiceName,
+            binaryPath: HelperConstants.Legacy.installedBinaryPath,
+            plistPath: HelperConstants.Legacy.installedPlistPath
+        ) + HelperInstallScript.installCommands(
             helperSource: source,
             plistSource: plistURL.path,
             label: HelperConstants.machServiceName,

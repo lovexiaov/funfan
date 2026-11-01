@@ -3,14 +3,14 @@ import XCTest
 
 final class HelperInstallScriptTests: XCTestCase {
 
-    private let label = "com.funfan.helper"
-    private let binary = "/Library/PrivilegedHelperTools/com.funfan.helper"
-    private let plist = "/Library/LaunchDaemons/com.funfan.helper.plist"
+    private let label = "cn.lovexiaov.fun.fan.helper"
+    private let binary = "/Library/PrivilegedHelperTools/cn.lovexiaov.fun.fan.helper"
+    private let plist = "/Library/LaunchDaemons/cn.lovexiaov.fun.fan.helper.plist"
 
     private func installCommands() -> [String] {
         HelperInstallScript.installCommands(
             helperSource: "/Applications/FunFan.app/Contents/MacOS/FunFanHelper",
-            plistSource: "/tmp/abc/com.funfan.helper.plist",
+            plistSource: "/tmp/abc/cn.lovexiaov.fun.fan.helper.plist",
             label: label,
             binaryPath: binary,
             plistPath: plist,
@@ -68,7 +68,7 @@ final class HelperInstallScriptTests: XCTestCase {
         XCTAssertLessThan(try index("ditto"), try index("bootstrap system"))
         XCTAssertLessThan(try index("codesign"), try index("chmod 544"))
         XCTAssertLessThan(try index("bootout"), try index("bootstrap system"))
-        XCTAssertTrue(joined.contains("bootstrap system '/Library/LaunchDaemons/com.funfan.helper.plist'"))
+        XCTAssertTrue(joined.contains("bootstrap system '/Library/LaunchDaemons/cn.lovexiaov.fun.fan.helper.plist'"))
     }
 
     /// 签名策略：Developer ID 保留，adhoc 重签成纯 adhoc。
@@ -91,10 +91,72 @@ final class HelperInstallScriptTests: XCTestCase {
             plistPath: plist
         )
         let joined = commands.joined(separator: "\n")
-        XCTAssertTrue(joined.contains("bootout system/com.funfan.helper"))
+        XCTAssertTrue(joined.contains("bootout system/cn.lovexiaov.fun.fan.helper"))
         XCTAssertTrue(joined.contains(binary))
         XCTAssertTrue(joined.contains(plist))
         XCTAssertTrue(joined.contains("rm -f"))
+    }
+
+    // MARK: - 改名迁移
+
+    /// 清理旧 label 必须排在安装之前。
+    ///
+    /// 反域名标识换过一次（`com.funfan.*` → `cn.lovexiaov.fun.fan*`）。旧 daemon
+    /// 不会被新流程覆盖，它会留在机器上和新 helper 同时写 SMC —— 风扇忽快忽慢、
+    /// App 退出后不返还。所以这条链路必须「先杀旧、再装新」，顺序错了就白做。
+    func testLegacyCleanupRunsBeforeInstall() throws {
+        let legacy = HelperInstallScript.legacyCleanupCommands(
+            label: HelperConstants.Legacy.machServiceName,
+            binaryPath: HelperConstants.Legacy.installedBinaryPath,
+            plistPath: HelperConstants.Legacy.installedPlistPath
+        )
+        let combined = legacy + installCommands()
+
+        let killLegacy = try XCTUnwrap(combined.firstIndex { $0.contains("bootout system/com.funfan.helper") })
+        let startInstall = try XCTUnwrap(combined.firstIndex { $0.contains("mkdir -p '/Library/PrivilegedHelperTools'") })
+        XCTAssertLessThan(killLegacy, startInstall, "必须先清理旧 label 再安装")
+
+        let joined = combined.joined(separator: "\n")
+        XCTAssertTrue(joined.contains("/Library/PrivilegedHelperTools/com.funfan.helper"))
+        XCTAssertTrue(joined.contains("/Library/LaunchDaemons/com.funfan.helper.plist"))
+    }
+
+    /// 清理步骤在「本来就没有旧残留」的机器上不能失败（否则老用户装不上）。
+    func testLegacyCleanupNeverFailsInstaller() {
+        let legacy = HelperInstallScript.legacyCleanupCommands(
+            label: HelperConstants.Legacy.machServiceName,
+            binaryPath: HelperConstants.Legacy.installedBinaryPath,
+            plistPath: HelperConstants.Legacy.installedPlistPath
+        )
+        // `set -e` 下只要有一条命令非零退出，整个安装就中断
+        for command in legacy {
+            XCTAssertTrue(
+                command.hasSuffix("|| true"),
+                "清理命令必须容错，否则新机器上装不了：\(command)"
+            )
+        }
+    }
+
+    /// 所有标识、路径都从同一个根派生，不允许任何一处再写字面量。
+    func testAllIdentifiersShareOneRoot() {
+        let root = HelperConstants.identifierRoot
+        XCTAssertEqual(root, "cn.lovexiaov.fun.fan")
+        XCTAssertEqual(HelperConstants.machServiceName, "\(root).helper")
+        XCTAssertEqual(HelperConstants.installedBinaryPath, "/Library/PrivilegedHelperTools/\(root).helper")
+        XCTAssertEqual(HelperConstants.installedPlistPath, "/Library/LaunchDaemons/\(root).helper.plist")
+        XCTAssertEqual(HelperConstants.logPath, "/var/log/\(root).helper.log")
+
+        // 诊断、安装脚本里的那份必须指到同一处，不能各写各的
+        XCTAssertEqual(HelperPaths.machServiceName, HelperConstants.machServiceName)
+        XCTAssertEqual(HelperPaths.binary, HelperConstants.installedBinaryPath)
+        XCTAssertEqual(HelperPaths.plist, HelperConstants.installedPlistPath)
+        XCTAssertEqual(HelperPaths.log, HelperConstants.logPath)
+        XCTAssertEqual(HelperInstallScript.logPath, HelperConstants.logPath)
+
+        // 旧标识必须和新标识完全不相交，否则清理逻辑会误删当前安装
+        XCTAssertFalse(HelperConstants.Legacy.machServiceName.hasPrefix(root))
+        XCTAssertNotEqual(HelperConstants.Legacy.installedBinaryPath, HelperConstants.installedBinaryPath)
+        XCTAssertNotEqual(HelperConstants.Legacy.installedPlistPath, HelperConstants.installedPlistPath)
     }
 
     func testShellScriptFailsFast() {
@@ -144,6 +206,13 @@ final class HelperInstallScriptTests: XCTestCase {
     func testGeneratedScriptsParseUnderBash() throws {
         let cases: [(String, [String])] = [
             ("install", installCommands()),
+            // 真实安装脚本是「清理旧 label + 安装」的拼接，两个都要过语法检查
+            ("install-with-legacy-cleanup",
+             HelperInstallScript.legacyCleanupCommands(
+                label: HelperConstants.Legacy.machServiceName,
+                binaryPath: HelperConstants.Legacy.installedBinaryPath,
+                plistPath: HelperConstants.Legacy.installedPlistPath
+             ) + installCommands()),
             ("uninstall", HelperInstallScript.uninstallCommands(
                 label: label, binaryPath: binary, plistPath: plist
             )),

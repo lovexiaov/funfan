@@ -100,7 +100,7 @@
 > **修正**：初版 `spin` 用「峰值 vs 目标」判定，把起飞过冲误判为失败；已改为「末 5 次均值 vs 目标 ±5%」。
 
 - [x] T11: 实现 FunFanHelper root daemon + XPC listener
-  - Acceptance: XPC listener（Mach service `com.funfan.helper`）；写操作带 TTL 租约看门狗（过期自动返还）；退出/信号返还；`LaunchDaemon.plist` 由安装脚本生成。
+  - Acceptance: XPC listener（Mach service `cn.lovexiaov.fun.fan.helper`）；写操作带 TTL 租约看门狗（过期自动返还）；退出/信号返还；`LaunchDaemon.plist` 由安装脚本生成。
   - Verify: `swift build -c release` 产出 helper；`sudo bash scripts/install-helper.sh` 加载成功；`install-helper.sh status` 显示 running。
   - Files: `FunFanHelper/main.swift`, `FunFanCore/XPC/HelperProtocol.swift`, `FunFanCore/XPC/XPCTransport.swift`, `scripts/install-helper.sh`
   - 备注：v0 用 launchd 直装便于开发期验证；正式发布改为 App 内 `SMAppService.daemon`（需 Xcode 工程 + Developer ID）。
@@ -202,7 +202,7 @@
   - Verify 实测：3.3 MB 包，内到外 adhoc 签名 `flags=0x10002(adhoc,runtime)`，`codesign --verify` 通过；
     `open` 后进程存活，`lsappinfo` 报 `type="UIElement"`；`CFBundleExecutable` 一致性自检通过；
     `spctl` 拒绝（adhoc 预期）；版本 1.0.0 (build=7 提交数)。
-  - Files: `packaging/{Info.plist,FunFan.entitlements,FunFanHelper.entitlements,com.funfan.helper.plist}`, `scripts/build-app.sh`, `VERSION`, `Makefile`
+  - Files: `packaging/{Info.plist,FunFan.entitlements,FunFanHelper.entitlements,cn.lovexiaov.fun.fan.helper.plist}`, `scripts/build-app.sh`, `VERSION`, `Makefile`
 
 - [x] T17b: Developer ID 签名 + 公证脚本
   - Acceptance: `make notarize` 完成签名 → DMG → 公证 → 装订 → Gatekeeper 验收；无证书时给出可执行诊断。

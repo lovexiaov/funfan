@@ -147,7 +147,7 @@ Release notes 由「上一个 tag 到 HEAD」的提交标题生成，外加固�
 | 公证 `Invalid`，日志提到 `hardened runtime` | 少了 `--options runtime` | `make notary-check` 会直接指出 |
 | 公证 `Invalid`，日志提到 `get-task-allow` | 用了开发签名/调试 entitlements | 确认 `packaging/*.entitlements` 没被改 |
 | 设置里安装报 `SMAppServiceErrorDomain 1` | adhoc 签名或 App 在桌面/下载 | 安装器会自动回退到「管理员授权直装」；想走系统登记就先签名 + 拖进 /Applications |
-| 「一键安装」弹密码后失败 | 脚本某一步报错（权限/路径/launchd） | 看弹窗里的 stderr 摘要；`sudo /bin/bash -c` 手动跑同一份命令可复现，日志在 `/var/log/com.funfan.helper.log` |
+| 「一键安装」弹密码后失败 | 脚本某一步报错（权限/路径/launchd） | 看弹窗里的 stderr 摘要；`sudo /bin/bash -c` 手动跑同一份命令可复现，日志在 `/var/log/cn.lovexiaov.fun.fan.helper.log` |
 | 直装组件与系统登记同时存在 | 先脚本装过，又走了 App 安装 | 「一键安装」会先 `bootout` 再覆盖，路径与 label 相同，不会共存两份 |
 | 状态一直是「待批准」 | 用户没在系统设置里批准 | 点「去批准」跳转；App 重新激活时会自动刷新 |
 | 风扇忽快忽慢 | 两个控制软件在抢 | FunFan 会检测到手动模式并拒绝接管；退出对方软件后点「重新检测」 |

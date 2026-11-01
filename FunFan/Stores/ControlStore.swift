@@ -81,7 +81,7 @@ final class ControlStore: ObservableObject {
 
     private var transport: XPCTransport?
     private var controller: FanController?
-    private let queue = DispatchQueue(label: "com.funfan.control", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "cn.lovexiaov.fun.fan.control", qos: .userInitiated)
     private var heartbeat: DispatchSourceTimer?
 
     /// 后台队列读取的镜像状态（避免跨线程读 `@Published`）。
