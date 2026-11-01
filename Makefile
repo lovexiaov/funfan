@@ -13,6 +13,7 @@ help:
 	@echo "  make release            release 构建"
 	@echo "  make test               跑全部单测"
 	@echo "  make run                开发态启动（debug 二进制装进 .app，行为与正式包一致）"
+	@echo "                          ARGS=\"--log-popover\" 可透传给 App"
 	@echo "  make run-raw            启动裸二进制（没有 bundle 身份，只用于快速调试）"
 	@echo "  make app                打包成 dist/FunFan.app（登录项/helper/公证都要它）"
 	@echo "  make run-app            打包并启动 dist/FunFan.app"
@@ -46,7 +47,7 @@ run: app-debug
 	@$(MAKE) --no-print-directory stop-running
 	@echo "→ 启动 dist/FunFan.app（debug 二进制；bundle 身份 / 偏好域 / 登录项与正式包一致）"
 	@echo "  注意：dist/FunFan.app 里现在是 debug 二进制，要正式包请跑 make app"
-	@open dist/FunFan.app
+	@open dist/FunFan.app $(if $(ARGS),--args $(ARGS))
 
 # 裸二进制：没有 bundle 身份 —— 偏好落在进程名域 FunFan（不是 cn.lovexiaov.fun.fan），
 # 登录项与 SMAppService 安装走不了，日志也和打包版混在同一份文件里。
