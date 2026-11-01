@@ -32,13 +32,20 @@ macOS 菜单栏风扇控制工具，面向 **Apple Silicon**。零第三方依�
 | 租约看门狗 | GUI 经 XPC 让 root helper 持权，10 s 租约 + 1 s 看门狗；GUI 崩溃 / 退出 / 合盖，风扇自动回到系统控制 |
 | 一键诊断 | 一条命令拿到可贴进 issue 的 Markdown 报告：机型、芯片、系统、SMC 键数、温度键可读率与不可读清单（含类型）、风扇区间与模式键、helper 状态与日志尾 |
 
-## 安装（下载现成的包）
+## 安装
 
-从 [Releases](https://github.com/lovexiaov/funfan/releases) 下载 `FunFan-<版本>.dmg`。
+> **当前没有可下载的发布包。** 此前两个 alpha 包（`v1.0.0-alpha.1` / `v1.0.0-alpha.2`）已撤回：它们由改名前的 bundle id（`com.funfan`）构建，会在机器上留下一个旧后台组件，与新版本共存时会和新 helper 抢同一个风扇。换标识之后尚未重新发版，现在请走下面的「从源码构建」。
 
-当前最新是 **`1.0.0-alpha.2`（预发布）**。alpha 的含义很具体：功能闭环，但合盖与第三方共存这两条路还没在真机上验过——发布说明与 `tasks/todo.md` 的 Verify 记录里写全了。不稳定就先别装，或者从源码构建。
+装过旧包的机器，先把残留清掉（默认只体检，`--apply` 才真删；删前会备份到 `.build/legacy-purge-backup/`）：
 
-> **这个包没有 Apple 签名证书，也没有经过公证。** FunFan 是个人项目，没有加入 Apple Developer Program（$99/年），产物是 adhoc 签名，macOS 会拦它一次，需要你手动放行。功能完全不受影响，代价只是首次启动多两步。信不过就往下看「从源码构建」，自己编出来的包不会有这道拦截。
+```bash
+bash scripts/purge-legacy.sh                # 体检：只列出会清什么
+sudo bash scripts/purge-legacy.sh --apply   # 确认无误后真清（系统侧 + 用户侧）
+```
+
+发版之后，从 [Releases](https://github.com/lovexiaov/funfan/releases) 下载 `FunFan-<版本>.dmg`，再按下面四步走。
+
+> **分发包没有 Apple 签名证书，也没有经过公证。** FunFan 是个人项目，没有加入 Apple Developer Program（$99/年），产物是 adhoc 签名，macOS 会拦它一次，需要你手动放行。功能完全不受影响，代价只是首次启动多两步。信不过就往下看「从源码构建」，自己编出来的包不会有这道拦截。
 
 **1. 校验（可选，但建议）**
 
@@ -321,7 +328,7 @@ M6（打包加固）已落地：`.app` 打包、Developer ID 签名 + 公证 + �
 
 **分发形态：未签名、未公证。** 已决定不购买 Apple Developer Program 会员（$99/年），对外发的就是 adhoc 签名的内测包，用户按「安装」一节手动放行一次。签名 + 公证的脚本留在仓库里，将来有证书可以直接启用，不需要改代码。这个选择的代价很具体：每个下载的人多两步点击，而且每次升级都要重复。
 
-已发布：[`v1.0.0-alpha.2`](https://github.com/lovexiaov/funfan/releases/tag/v1.0.0-alpha.2)（标为 prerelease，不进 Latest；更早的 `v1.0.0-alpha.1` 仍在）。附件 `dmg` / `zip` / `SHA256SUMS.txt`，tag 指向构建它的那个提交。
+已撤回：`v1.0.0-alpha.1` / `v1.0.0-alpha.2` 的包由改名前的 bundle id 构建，已从 Releases 删除，tag 与本地标签一并清掉（对应提交仍在历史里）。装过旧包的机器用 `sudo bash scripts/purge-legacy.sh --apply` 清残留。下次发版会以当前标识重新打包。
 
 未完成：T16b 端到端合盖验证（需笔记本机型）。
 

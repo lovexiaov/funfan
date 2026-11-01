@@ -9,7 +9,7 @@ body:
         感谢反馈。发之前请先确认两件事：
 
         1. 你用的是 **最新 Release**（[Releases](https://github.com/lovexiaov/funfan/releases)）；
-        2. 如果是首次启动被 macOS 拦住、提示「已损坏，无法打开」——那是**未公证包的预期行为**，先看 [安装说明](https://github.com/lovexiaov/funfan#安装下载现成的包)，不用开 issue。
+        2. 如果是首次启动被 macOS 拦住、提示「已损坏，无法打开」——那是**未公证包的预期行为**，先看 [安装说明](https://github.com/lovexiaov/funfan#安装)，不用开 issue。
 
         贴日志前请删掉用户名、序列号等个人信息。诊断报告只在本机生成，不会自动上传。
 
