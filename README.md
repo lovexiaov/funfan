@@ -129,6 +129,12 @@ sudo ./.build/release/funfanctl spin --rpm 2950 --seconds 6   # 写入验证，�
 
 两种安装落在**同一个路径、同一个 label**（`cn.lovexiaov.fun.fan.helper`），所以彼此互斥；「一键安装」会自动 `bootout` 旧进程再覆盖，不需要先手动卸载。反过来，App 装过之后脚本会拒绝安装并说明原因（防止两个写手抢同一个 Mach service）。
 
+### 卸载
+
+推荐的卸载顺序：先在 App 设置里点「卸载组件」，再删 App。脚本直装的用 `sudo bash scripts/install-helper.sh uninstall`。
+
+直接把 App 拖进废纸篓也不会留下失控的 root 进程：daemon 会检测宿主消失（每 60 s 查一次、连续约 3 分钟确认，防外置卷瞬时卸载误判），先返还风扇控制，再删掉自己的注册与文件。两个已知边界：① 脚本直装版要daemon「认识」宿主才会监视——安装时传 `--app <路径>`（不传则自动探测 `dist/FunFan.app`）；② 「删 App → 重启」的顺序下，包内安装的 daemon 随 App 一起消失，自清无从发生，系统设置里会残留一条指向空路径的后台项（无害，不会执行任何代码）。
+
 ### 清理改名前的残留
 
 bundle id 从 `com.funfan.*` 迁到 `cn.lovexiaov.fun.fan` 之后，机器上的旧痕迹不会自己消失：旧 daemon 还注册着 `com.funfan.helper` 这个 Mach service，会和新 helper 同时写 SMC（风扇忽快忽慢、App 退出后不返还）。

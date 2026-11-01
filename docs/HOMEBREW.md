@@ -85,10 +85,11 @@ brew install --cask lovexiaov/tap/funfan
 - `depends_on macos: :ventura`（Info.plist `LSMinimumSystemVersion` = 13.0）。
 - **卸载 helper**：helper 走 SMAppService daemon（label `cn.lovexiaov.fun.fan.helper`，
   可执行文件在 App 包内，不在 `/Library/LaunchDaemons` 落盘 plist）。
-  cask 的 `uninstall launchctl:` 用 `launchctl bootout system/cn.lovexiaov.fun.fan.helper`
-  思路可行但**需真机实测**（bootout 系统域需要 root，brew 卸载默认无 sudo）。
-  兜底：cask `uninstall` 加一段 `sudo: true` 的 script，或引导用户在
-  App 设置页点「卸载组件」。此条是启用 tap 前必须验证的第一项。
+  T20 已落地「宿主消失自退场」：daemon 检测到宿主 App 被删后自毁（先返还
+  风扇 → 删文件 → `launchctl bootout system/<label>` → exit(0)），cask
+  `uninstall quit:` 掉 App 之后 daemon 最迟约 3 分钟内自己退场；cask 侧
+  再补一个 `launchctl:` 条目做即时清理，无需 sudo script 兜底。
+  **仍需真机实测**：bootout 后 BTM 记录（系统设置里的后台项）是否随之清除。
 - **无自动更新器**：App 内没有 Sparkle，cask 不写 `auto_updates`，让
   `brew upgrade` 管（这正好是 Homebrew 用户预期）。
 - `zap` 路径清单（`brew generate-zap` 出稿后人工核对）：偏好、

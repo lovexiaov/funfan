@@ -444,5 +444,46 @@
 
 ---
 
+## T20 · helper 宿主消失自退场（2026-11-01）
+
+- 背景：macOS 没有「App 被卸载」回调；用户直接删 App 时唯一能自清理的
+  是还活着的特权 daemon。目标：宿主消失后 daemon 自我注销，绝不留下
+  连着 SMC 的 root 进程。
+- Acceptance: 核心逻辑（路径推导 / 连续缺席计数 / 有序清理步骤）在
+  FunFanCore 可单测；daemon 薄壳执行；脚本直装版经 `FUNFAN_APP_PATH`
+  获知宿主（100% 可自清，二进制独立于 App 包）；文档同步。
+- Verify 实测：
+  - TDD 先红后绿：`HelperSelfCleanupTests` 11 个单测（宿主路径推导含
+    空格/伪装目录/短路径、缺席计数含重置与超阈值、两种安装形态的步骤
+    序列与顺序语义、bootout 参数）；
+  - 全量 `make test` 318 单测 0 失败；`make build` 全目标通过；
+  - `/bin/bash -n scripts/install-helper.sh` 语法通过（含新的 `--app`
+    参数解析与条件 plist 环境变量块）。
+- 设计要点：
+  - 自毁顺序即安全顺序：**先返还风扇**（安全不变量优先于清理）→ 删文件
+    （运行中进程 unlink 自己是安全的）→ `launchctl bootout` 最后
+    （它会发 SIGTERM，之后没机会再删）→ exit(0)；
+  - 防误判：每 60 s 查一次、连续 3 次（约 3 分钟）缺席才动手，
+    中途回来清零——外置卷瞬时卸载、更新换包都只会缺席一次；
+  - 安装形态按事实来源判定：可执行文件在 `.app/Contents/MacOS/` 内
+    → 包内安装（宿主 = 反推的包路径）；裸二进制 + `FUNFAN_APP_PATH`
+    → 脚本直装；两者皆无 → 关闭监视（猜路径比不猜更危险）；
+  - 结构性局限（记录在案）：包内安装若「删 App → 重启」，daemon 随
+    App 消失，自清无从发生，系统设置残留一条指向空路径的后台项
+    （无害，不执行任何代码）；脚本直装版重启后仍能自清。
+- 未验证（需用户真机）：
+  - [ ] 脚本直装（`--app` 记录宿主）→ 删 App → 约 3 分钟内
+    `sudo bash scripts/install-helper.sh status` 显示未加载、
+    `/Library/LaunchDaemons/cn.lovexiaov.fun.fan.helper.plist` 已删；
+  - [ ] SMAppService 版删 App 后自毁，BTM 记录（系统设置后台项）是否
+    随 bootout 清除——这也决定 Homebrew cask 的卸载路径（`docs/HOMEBREW.md` §6）；
+  - [ ] App 内「卸载组件」按钮与新监视互不干扰。
+- Files: `FunFanCore/Helper/HelperSelfCleanup.swift`,
+  `FunFanHelper/main.swift`, `scripts/install-helper.sh`,
+  `Tests/FunFanCoreTests/HelperSelfCleanupTests.swift`,
+  `README.md`, `docs/SPEC-FunFan.md`, `docs/HOMEBREW.md`
+
+---
+
 ## 完成判据（全量）
 满足 `docs/SPEC-FunFan.md` §8 全部 12 条 Success Criteria；`make test` 全绿（单测 ≥80% 覆盖）；`make build` 产出可分发 app。
