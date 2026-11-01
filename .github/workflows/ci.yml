@@ -1,0 +1,70 @@
+name: ci
+
+# PR 与主分支的常规检查：能编译、单测全绿、打包链路没断。
+# 和 release.yml 的分工：这里**不发布**任何东西，只在 tag 之外的时机把关。
+#
+# 为什么不加 --disable-sandbox（Makefile 里加了）：
+#   --disable-sandbox 是绕过本机 SPM 沙箱受限的临时手段，GitHub runner 没有这个问题。
+#   在这里保持默认值，等于顺带验证了「普通环境下的常规命令也能跑」。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 构建 / 单测 / 打包
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: 取源码
+        uses: actions/checkout@v5
+        with:
+          # gen-release-notes.sh 的测试会读 git log / git describe
+          fetch-depth: 0
+
+      - name: 工具链
+        run: |
+          set -euo pipefail
+          sw_vers
+          swift --version
+          xcodebuild -version
+
+      - name: 调试构建
+        run: swift build
+
+      - name: 单测
+        run: swift test
+
+      - name: 组包冒烟
+        run: |
+          set -euo pipefail
+          bash scripts/build-app.sh
+          # 包结构不对的话，后面所有分发路径都会静默失败，这里先卡住
+          test -d dist/FunFan.app
+          test -x dist/FunFan.app/Contents/MacOS/FunFan
+          test -x dist/FunFan.app/Contents/MacOS/FunFanHelper
+          test -f dist/FunFan.app/Contents/Library/LaunchDaemons/cn.lovexiaov.fun.fan.helper.plist
+          codesign --verify --strict --verbose=2 dist/FunFan.app
+
+      - name: 汇总
+        if: always()
+        run: |
+          {
+            echo "### CI 结果"
+            echo
+            echo "- 提交：\`${GITHUB_SHA::7}\`"
+            echo "- 运行器：macos-15 ($(uname -m))"
+            echo "- 状态：${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"

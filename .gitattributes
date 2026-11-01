@@ -1,0 +1,19 @@
+# 统一换行与二进制判定。
+# 目的：别人在 Windows 上 clone 下来改文档时不会把 LF 变成 CRLF，
+# 也不会让 Git 去 diff 图标而把二进制当成文本处理。
+
+* text=auto eol=lf
+
+*.png  binary
+*.icns binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.dmg  binary
+*.zip  binary
+*.pdf  binary
+
+# 让 GitHub 语言统计不被文档淹没
+*.md   linguist-documentation
+docs/** linguist-documentation
+tasks/** linguist-documentation

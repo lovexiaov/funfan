@@ -1,8 +1,24 @@
 # FunFan
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/lovexiaov/funfan?include_prereleases&label=release)](https://github.com/lovexiaov/funfan/releases)
+[![ci](https://github.com/lovexiaov/funfan/actions/workflows/ci.yml/badge.svg)](https://github.com/lovexiaov/funfan/actions/workflows/ci.yml)
+
 macOS 菜单栏风扇控制工具，面向 **Apple Silicon**。零第三方依赖，纯 Swift / SwiftUI，用 SPM 构建。
 
 不只是一个"拉滑块转风扇"的界面：它读 SMC 温度与电量，按你写的规则自动调速，并在任何异常路径上把控制权还给系统。
+
+> **改风扇转速有风险。** 底层 SMC 接口未公开，系统升级后可能失效或行为改变。所有写入都会收敛到系统区间与安全下限、绝不发送 0 RPM，但请自行承担使用风险；出现异常先切回「自动」。
+
+## 界面
+
+| 菜单栏面板 | 温度曲线 |
+|---|---|
+| ![菜单栏面板](docs/ui-prototype/popover-actual.png) | ![温度曲线](docs/ui-prototype/curve-window-actual.png) |
+
+| 规则自动调速 | 设置 |
+|---|---|
+| ![规则](docs/ui-prototype/rules-window.png) | ![设置](docs/ui-prototype/settings-window-actual.png) |
 
 ## 现在能做什么
 
@@ -20,7 +36,7 @@ macOS 菜单栏风扇控制工具，面向 **Apple Silicon**。零第三方依�
 
 从 [Releases](https://github.com/lovexiaov/funfan/releases) 下载 `FunFan-<版本>.dmg`。
 
-当前最新是 **`1.0.0-alpha.1`（预发布）**。alpha 的含义很具体：功能闭环，但合盖与第三方共存这两条路还没在真机上验过——该版本的发布说明里「已知问题」一节写全了。不稳定就先别装，或者从源码构建。
+当前最新是 **`1.0.0-alpha.2`（预发布）**。alpha 的含义很具体：功能闭环，但合盖与第三方共存这两条路还没在真机上验过——发布说明与 `tasks/todo.md` 的 Verify 记录里写全了。不稳定就先别装，或者从源码构建。
 
 > **这个包没有 Apple 签名证书，也没有经过公证。** FunFan 是个人项目，没有加入 Apple Developer Program（$99/年），产物是 adhoc 签名，macOS 会拦它一次，需要你手动放行。功能完全不受影响，代价只是首次启动多两步。信不过就往下看「从源码构建」，自己编出来的包不会有这道拦截。
 
@@ -69,11 +85,11 @@ xattr -dr com.apple.quarantine /Applications/FunFan.app
 需要 macOS 13+ 与 Xcode 命令行工具。自己编出来的包没有隔离属性，双击即开。
 
 ```bash
-git clone git@github.com:lovexiaov/funfan.git
+git clone https://github.com/lovexiaov/funfan.git
 cd funfan
 
 make build        # 调试构建（含 CLI / helper / probe / GUI）
-make test         # 281 个单测
+make test         # 291 个单测
 make run          # 启动菜单栏 App
 ```
 
@@ -248,7 +264,7 @@ FunFan/         SwiftUI 菜单栏 App
 FunFanCtl/      CLI（funfanctl）
 FunFanHelper/   特权 helper（XPC + 看门狗）
 FunFanProbe/    真机探针
-Tests/          281 个单测
+Tests/          291 个单测
 ```
 
 ## 几个真机上踩到的坑
@@ -278,10 +294,13 @@ Tests/          281 个单测
 | [docs/ui-design-handoff.md](docs/ui-design-handoff.md) | UI 设计交付稿（含实现偏差附录） |
 | [docs/ui-prototype/funfan-design.html](docs/ui-prototype/funfan-design.html) | 可交互 HTML 原型 |
 | [tasks/todo.md](tasks/todo.md) | 任务清单与逐项验证记录 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献流程、代码约定、fork 前必须改的 bundle id |
+| [SECURITY.md](SECURITY.md) | 信任模型与私密漏洞上报渠道 |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 社区行为准则 |
 
 ## 状态
 
-M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、281 个单测全绿。
+M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、291 个单测全绿。
 
 策略四态（自动 / 固定 / 曲线 / 规则）全部可用，曲线与规则编辑器均已落地；设置窗口支持登录启动、菜单栏显示开关、一键自检与免责声明。
 
@@ -291,10 +310,20 @@ M6（打包加固）已落地：`.app` 打包、Developer ID 签名 + 公证 + �
 
 **分发形态：未签名、未公证。** 已决定不购买 Apple Developer Program 会员（$99/年），对外发的就是 adhoc 签名的内测包，用户按「安装」一节手动放行一次。签名 + 公证的脚本留在仓库里，将来有证书可以直接启用，不需要改代码。这个选择的代价很具体：每个下载的人多两步点击，而且每次升级都要重复。
 
-首个对外版本已发布：[`v1.0.0-alpha.1`](https://github.com/lovexiaov/funfan/releases/tag/v1.0.0-alpha.1)（标为 prerelease，不进 Latest）。附件 `dmg` / `zip` / `SHA256SUMS.txt`，tag 指向构建它的那个提交。
+已发布：[`v1.0.0-alpha.2`](https://github.com/lovexiaov/funfan/releases/tag/v1.0.0-alpha.2)（标为 prerelease，不进 Latest；更早的 `v1.0.0-alpha.1` 仍在）。附件 `dmg` / `zip` / `SHA256SUMS.txt`，tag 指向构建它的那个提交。
 
 未完成：T16b 端到端合盖验证（需笔记本机型）。
 
 ## 许可
 
-未定。
+[MIT](LICENSE)。用、改、分发、商用都可以，保留版权与许可声明即可，不提供任何担保。
+
+改风扇转速属于对硬件的直接操作，风险自负；详见上面的风险提示与 [`SECURITY.md`](SECURITY.md) 里的信任模型。
+
+## 参与贡献
+
+欢迎 issue 与 PR：
+
+- 功能异常 / 安装问题 → 按 [issue 模板](https://github.com/lovexiaov/funfan/issues/new/choose) 提交，附上诊断报告
+- 安全问题 → 走私密渠道，见 [`SECURITY.md`](SECURITY.md)
+- 代码贡献 → 先读 [`CONTRIBUTING.md`](CONTRIBUTING.md)，**fork 构建前务必改 bundle id**，否则会和本机已装的 helper 抢同一个 launchd label
