@@ -343,6 +343,23 @@
   点击行为属真机可视项（agent 沙箱内 GUI 进程会被 SIGKILL），需用户终端 `make app` 后目检：
   点图标开 → 再点同一位置关 → 点面板外关 → 右键图标关 → ESC 关。
 
+- **第二版（用户实测「有时候点 3 下才能隐藏」后重做）**：证明第一版只治了一半。
+  - 残留根因：第一版把 AppKit 关面板的手收了，但 `togglePopover()` 仍然读**抬起时**的
+    `isShown` 当决策依据。按下到抬起之间隔着整个按钮 track，这段时间面板仍可能被关过一次
+    （我们自己「点外面关闭」只要把图标判成「别的窗口」就会关）。于是「本来要关」被读成
+    「已经关了」→ 又打开，一次点击白费；连点几次才碰上一次时序对上。
+  - 定论（这次是本质）：**开关决策必须用「鼠标按下那瞬间」的状态，不能用抬起时的状态。**
+    按下时记录 `stateAtMouseDown`，action 只负责执行这个决定；`closePopover` 幂等，
+    中间被谁关过都不影响结果。
+  - 判「点的是不是图标」加屏幕坐标兜底（`isStatusItemClick`）：菜单栏是系统托管的宿主窗口，
+    `event.window === button.window` 未必成立；落点在按钮矩形内就算，与窗口身份解耦。
+  - `isPopoverVisible`（`isShown` ∪ 窗口 `isVisible`）：`show`/`close` 撞在一起时
+    `isShown` 会短暂说谎，用硬事实兜。
+  - 新增 `FunFan --log-popover`：把每次 `down / action / close / close-done` 连状态写进
+    `~/Library/Application Support/FunFan/popover-click.log`。这类「看得见抓不着」的
+    UI 时序问题，沙箱里没法复现，只能真机点几下再读文件——比再猜一轮便宜。
+  - Verify：`make build` 0 错误、`make test` 291 全绿；真机点击仍需用户目检（见上）。
+
 ---
 
 ## 完成判据（全量）

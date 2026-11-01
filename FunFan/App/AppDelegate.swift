@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var curveWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var popoverVisible = false
-    private var dismissMonitors: [Any] = []
+    private var clickMonitors: [Any] = []
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - 生命周期
@@ -238,8 +238,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // `togglePopover()` 误判成「用户要打开」，把刚关掉的面板又弹回来，
         // 表现就是「图标只会显示、永远关不掉」（中间还闪一下）。
         //
-        // 改成 `.applicationDefined` 后，AppKit 不再自作主张，点击归属由
-        // `handleClick(_:isGlobal:)` 判定：点图标交给 action 切换，点别处才关。
+        // 改成 `.applicationDefined` 后 AppKit 不再自作主张，关不关由我们自己判
+        // （`handleMouseDown` 分流 + `togglePopover` 用按下瞬间的状态做决策）。
         popover.behavior = .applicationDefined
         popover.animates = false
         popover.delegate = self
@@ -273,46 +273,98 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
 
-        installDismissMonitors()
+        installClickRouter()
     }
 
+    /// 菜单栏图标的开/关切换。
+    ///
+    /// 关键：**决策依据是「鼠标按下那瞬间」的状态，不是这时的 `popover.isShown`**。
+    /// 按下和抬起之间隔着整个按钮 track，这段时间里面板可能已经被关过一次
+    /// （AppKit 的 `.transient` 会自动关，我们自己的「点外面关闭」也可能误判）。
+    /// 一读当前状态就会被骗：本来要关，读成「已经关了」→ 又给打开。
+    ///
+    /// 用按下时的状态就永远正确：该关就关（`closePopover` 幂等，关两次也只关一次），
+    /// 该开就开，不受中间发生过什么影响。
     @objc private func togglePopover() {
-        guard let button = statusItem.button else { return }
-        if popover.isShown {
+        let now = ProcessInfo.processInfo.systemUptime
+        let wasShown: Bool
+        if let record = stateAtMouseDown, now - record.at < Self.clickActionWindow {
+            wasShown = record.shown
+        } else {
+            // 没有 mouseDown 前情：键盘 / 辅助功能（VoiceOver）触发的 action
+            wasShown = isPopoverVisible
+        }
+        stateAtMouseDown = nil
+
+        PopoverClickLog.write("action wasShown=\(wasShown) isShown=\(popover.isShown)")
+        if wasShown {
             closePopover()
         } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            NSApp.activate(ignoringOtherApps: true)
+            showPopover()
         }
     }
 
-    private func closePopover() {
-        guard popover.isShown else { return }
-        popover.performClose(nil)
+    private func showPopover() {
+        guard let button = statusItem.button else { return }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
-    // MARK: - Popover 关闭时机
+    /// 关掉面板。不看 `isShown` 再动手：状态可能已经被别处改过，
+    /// 而 `performClose` 本身就是幂等的（没开就什么都不做）。
+    private func closePopover() {
+        PopoverClickLog.write("close isShown=\(popover.isShown) visible=\(isPopoverVisible)")
+        popover.performClose(nil)
+        // 取证：如果「关完还在」，日志会写下 close-done visible=true ——
+        // 那就说明问题不在判断逻辑，而在 performClose 本身没生效。
+        guard PopoverClickLog.isEnabled else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            PopoverClickLog.write("close-done visible=\(self.isPopoverVisible)")
+        }
+    }
+
+    /// 面板是不是真的在屏幕上。
+    ///
+    /// 为什么不只信 `popover.isShown`：`show` 与 `close` 撞在一起时它会短暂说谎，
+    /// 而按它做的决定（该关却以为已关）正是「点几下才关得掉」的另一条来源。
+    /// 窗口 `isVisible` 是硬事实，两者取或。
+    private var isPopoverVisible: Bool {
+        if popover.isShown { return true }
+        return popover.contentViewController?.view.window?.isVisible ?? false
+    }
+
+    // MARK: - 点击路由
+
+    /// 一次点击在「按下那瞬间」的面板状态。
+    private var stateAtMouseDown: (shown: Bool, at: TimeInterval)?
+
+    /// 按下到抬起正常 < 0.3 s；给到 2 s 只为容忍「按住不放再抬起」。
+    /// 超过窗口就当没有前情，回落到当前状态（键盘 / 辅助功能触发）。
+    private static let clickActionWindow: TimeInterval = 2.0
 
     /// 自己实现「点外面关闭」：面板是 `.applicationDefined`，不装这些监视器就永远关不掉。
     ///
-    /// 本地监视器在事件派发给窗口**之前**回调，所以不会被 AppKit 抢先关面板，
-    /// 也就不会出现 `.transient` 那种「按下关、抬起又开」的时序事故。
-    private func installDismissMonitors() {
+    /// 本地监视器在事件派发给窗口**之前**回调，所以「记状态」一定发生在
+    /// 任何可能的关闭动作之前 —— 这是 `togglePopover` 能读到干净状态的前提。
+    private func installClickRouter() {
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
 
         if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            // 点到我们自己 App 的窗口：判定后原样放行，别吃掉控件点击
-            self?.handleClick(event, isGlobal: false)
-            return event
+            self?.handleMouseDown(event)
+            return event // 始终放行：图标要能高亮，控件要能收到点击
         }) {
-            dismissMonitors.append(local)
+            clickMonitors.append(local)
         }
 
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
-            // 点到别的 App / 桌面：全局监视器拿不到事件本身，一律当「点外面」
-            self?.handleClick(nil, isGlobal: true)
+            // 点到别的 App / 桌面。全局监视器在别的进程里，拿不到事件本体，
+            // 也不会有后续 action 来切换，所以直接关。
+            guard let self, self.isPopoverVisible else { return }
+            PopoverClickLog.write("global down → close")
+            self.closePopover()
         }) {
-            dismissMonitors.append(global)
+            clickMonitors.append(global)
         }
 
         // `.transient` 时 AppKit 顺手做了 ESC 关闭，改成自定义后得补回来
@@ -320,29 +372,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             if event.keyCode == 53 { self?.closePopover() }
             return event
         }) {
-            dismissMonitors.append(escape)
+            clickMonitors.append(escape)
         }
     }
 
-    private func handleClick(_ event: NSEvent?, isGlobal: Bool) {
-        guard popover.isShown else { return }
+    private func handleMouseDown(_ event: NSEvent) {
+        let onIcon = isStatusItemClick(event)
+        let shown = isPopoverVisible
+        // 先记状态，再做任何可能改变状态的事
+        stateAtMouseDown = (shown, ProcessInfo.processInfo.systemUptime)
+        PopoverClickLog.write(
+            "down type=\(event.type == .rightMouseDown ? "right" : "left") "
+                + "onIcon=\(onIcon) shown=\(shown)"
+        )
 
-        // 别的 App 里的点击（全局监视器不交事件本体）：直接关
-        guard !isGlobal, let event else {
-            closePopover()
+        if onIcon {
+            // 左键交给按钮的 action 切（辅助功能也走同一条路），这里不动手；
+            // 右键当「取消」，直接关。
+            if event.type == .rightMouseDown, shown { closePopover() }
             return
         }
-
-        let window = event.window
+        guard shown else { return }
         // 面板内部：不动
-        if window === popover.contentViewController?.view.window { return }
-        // 菜单栏图标：左键交给 `togglePopover` 自己切换（它知道当前状态），右键当「取消」
-        if window === statusItem.button?.window {
-            if event.type == .rightMouseDown { closePopover() }
-            return
-        }
+        if event.window === popover.contentViewController?.view.window { return }
         // 我们自己的其它窗口（规则 / 曲线 / 设置）
         closePopover()
+    }
+
+    /// 点的是不是菜单栏图标。
+    ///
+    /// 只比 `event.window === button.window` 不够稳：菜单栏是系统托管的宿主窗口，
+    /// 事件报上来的 window 未必就是按钮自己那个。再按**屏幕坐标**兜一层 ——
+    /// 落点在按钮矩形内就算点图标，与窗口身份无关。
+    private func isStatusItemClick(_ event: NSEvent) -> Bool {
+        guard let button = statusItem.button, let window = button.window else { return false }
+        if event.window === window { return true }
+        let rectOnScreen = window.convertToScreen(button.convert(button.bounds, to: nil))
+        return rectOnScreen.contains(NSEvent.mouseLocation)
     }
 
     func popoverDidShow(_ notification: Notification) {
