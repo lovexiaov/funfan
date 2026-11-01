@@ -208,12 +208,13 @@ FunFanHelper/      HelperMain · XPCService · LaunchDaemon.plist
 **设计走查方法**
 ```
 swift build --disable-sandbox
-./.build/debug/FunFan --render rules    /tmp/rules.png  --scale 3
-./.build/debug/FunFan --render curve    /tmp/curve.png  --scale 3
-./.build/debug/FunFan --render settings /tmp/settings.png --scale 3
-./.build/debug/FunFan --render popover  /tmp/pop.png    --scale 3
+./.build/debug/FunFan --render rules    /tmp/rules.png  --scale 3 --scheme light
+./.build/debug/FunFan --render curve    /tmp/curve.png  --scale 3 --scheme light
+./.build/debug/FunFan --render settings /tmp/settings.png --scale 3 --scheme light
+./.build/debug/FunFan --render popover  /tmp/pop.png    --scale 3 --scheme light
 ./.build/debug/FunFan --render editor   /tmp/editor.png --scale 3
 ```
+`--scheme light|dark`（默认 dark）把对应 `Palette` 注入环境再渲染；**走查必须明暗各渲一遍**——2026-11 复审的教训就是全部截图只有深色，浅色的语义色失效（1.28–2.52:1）长期无人发现。`--flat` 供含 `ScrollView` 的画面用：以「不滚动、全部摊开」的方式渲染内容（走查专用，真机仍滚动）。
 
 焦点环不在 `ImageRenderer` 的产出里（它不参与响应者链，拿不到键盘焦点），加 `--force-focus` 可以强制画出来走查几何：
 ```
@@ -227,3 +228,19 @@ screencapture -x /tmp/shot.png
 ```
 
 `--render popover` 会先启动一轮真实采样再画（约 1.2 s），因此风扇转速、温度、传感器数都是真机值，不是占位符。这是唯一能核验「自动/手动两种模式下目标行取值不同」的方法——判定逻辑不在视图里，靠静态假数据看不出来。
+
+## 附录 D · 明暗双主题重构（2026-11-01，落实 `ui-review-2026-11-01.md`）
+
+| 偏差 / 决策 | 位置 | 原因 |
+|---|---|---|
+| 配色从 `Theme.accent` 静态常量改为 `Palette` 双套 + `@Environment(\.palette)` 注入 | `Theme.swift`（`Palette.resolve(_:)`）→ 全部视图 | 同一色值服务不了两种外观：四个语义色按深底调校，浅色实测 1.28–2.52:1。也不用 Assets Color Set / `NSColor` 动态色——它们靠 `NSAppearance.current` 解析，离屏渲染拿不到，浅色会再次变成「看不见的东西」。**视图里不再允许 `Theme.accent` 这类静态色**，只认 `palette` |
+| accent 拆两档：`accentText`（文字，≥4.5:1）与 `accentFill`（环弧/曲线/选中底/焦点环，≥3:1） | `Palette` | 一色四义是复审定性的语义问题；拆档后「可点的字」与「图形填充」不再互抢 |
+| 温度色（cool/warm/hot）与界面提示色（attention/error）分成两条轴 | `Palette` | 「CPU 62℃」和「免责声明」不再共用一个黄；红色只留给 ≥75℃ 与错误 |
+| 数值一律 `textPrimary`，温度只体现在指示物（`TemperatureIndicator`：实心点/点+外环/三角，颜色之外还有形态） | `Components.swift`、`MenuBarView.swift` | 「一切正常=全绿」使默认画面颜色信息量为 0，且把主数据降级成彩色文本；形态差也让色觉障碍用户可分 |
+| 字号收敛为 15/12/11（+数值等宽档），最低 11pt | `Theme.Typo` | 原 13 个档位、92 处 ≤11pt、24 处 ≤9pt；坐标轴从 8pt 提到 11pt |
+| 卡片分层改由描边承担（浅色白卡 + `cardStroke`），不再只靠 `primary.opacity` 差 5% | `Palette.cardFill/cardStroke` | 浅色下卡片与底仅 1.10:1，边界不可见 |
+| 设置页第一组新增「外观」三态（跟随系统/浅色/深色），写入 `SettingsStore.appearance` | `SettingsView.swift`、`SettingsStore.swift`、`AppDelegate.swift` | 复审要求 1 的「手动覆盖」此前完全缺失。**不要**用 `NSApp.appearance` 全局覆盖——会把菜单栏图标一起反转；做法是每个窗口根视图 `@ObservedObject settings` 并 `.environment(\.colorScheme, resolved)`，已开窗口即时跟随 |
+| 环境格三态：available→度数 / pending→`—` / unsupported→「无传感器」+tooltip | `MonitorStore.ambientAvailability` → `MenuBarView.tempChip` | 见附录 C「环境格」条目；本机实测无 `TA*` 键，「—」会被误读为暂时读不到 |
+| 曲线安全下限从红带改中性斜纹 + 虚线；当前温度线改中性虚线 | `CurveEditorView.swift` | 红色只留给真正过热（≥75℃）；红带会被误读成「危险区」而非「画不到的地方」 |
+| 弹窗展开区限高 280pt 内滚动；走查看全量用 `--render popover-cores --flat` | `MenuBarView.expandedThermalDetail` | P 簇 41 探测点会把 320pt popover 撑到 1700pt+；`ImageRenderer` 渲染不出 `ScrollView`，摊开模式是走查与真机之间唯一一致的观察窗 |
+| 设置窗口高度 540×800（`minHeight` 780） | `AppDelegate.swift`、`SettingsView.swift` | 内容自然高度 ≈790pt（外观组 + 免责声明完整显示）；旧 580 会裁掉免责声明。无 ScrollView，高度必须给足 |

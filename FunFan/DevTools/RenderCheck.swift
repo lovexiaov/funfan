@@ -123,7 +123,7 @@ enum RenderCheck {
                     diagnostics: DiagnosticsStore(),
                     installer: HelperInstaller()
                 )
-                .frame(width: 540, height: 700)
+                .frame(width: 540, height: 800)
             )
         case "popover":
             content = AnyView(

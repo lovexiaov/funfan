@@ -43,7 +43,7 @@ struct SettingsView: View {
             .padding(16)
             Spacer(minLength: 0)
         }
-        .frame(minWidth: 520, minHeight: 560)
+        .frame(minWidth: 520, minHeight: 780)
         .background(palette.panelFill)
     }
 

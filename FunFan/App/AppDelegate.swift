@@ -614,7 +614,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         window.title = "FunFan · 设置"
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 540, height: 580))
+        window.setContentSize(NSSize(width: 540, height: 800))
         window.appearance = settings.appearance.nsAppearance
         window.center()
         window.makeKeyAndOrderFront(nil)
