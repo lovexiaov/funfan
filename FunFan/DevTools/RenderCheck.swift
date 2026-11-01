@@ -2,6 +2,23 @@ import SwiftUI
 import AppKit
 import FunFanCore
 
+/// 仅供 `FunFan --render` 使用：把展开区的 `ScrollView` 摊平。
+///
+/// `ImageRenderer` 不会渲染 `ScrollView` 的内容（它没有 intrinsic size，
+/// 离屏渲染出来是一整片空白）。这不是产品 bug，但会让「展开后内容是否放得下、
+/// 方块会不会换行、探测点会不会截断」这类问题在走查里完全看不见。
+/// 打开这个开关就用普通 `VStack` 代替 `ScrollView`，能拍到完整内容。
+private struct FlattenScrollKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var renderFlattensScroll: Bool {
+        get { self[FlattenScrollKey.self] }
+        set { self[FlattenScrollKey.self] = newValue }
+    }
+}
+
 /// 开发期渲染校验：把 SwiftUI 视图离屏渲染成 PNG。
 ///
 /// 为什么需要它：本机 `screencapture` 受屏幕录制权限限制不可用，
@@ -45,6 +62,17 @@ enum RenderCheck {
             return max(1, min(value, 4))
         }
         return 2
+    }
+
+    /// `--scheme light|dark`：显式指定外观。
+    ///
+    /// **为什么必须要有这个开关**：原来这里写死 `.dark`，项目所有走查截图都是深色，
+    /// 而浅色模式下的语义色实测只有 1.28–2.52:1（正文需 4.5）—— 问题存在了很久
+    /// 却一直「看不见」。有了它，浅色才成为可验收的交付物，而不是靠用户偶然发现。
+    private static func schemeValue() -> ColorScheme {
+        let args = CommandLine.arguments
+        guard let index = args.firstIndex(of: "--scheme"), args.count > index + 1 else { return .dark }
+        return args[index + 1] == "light" ? .light : .dark
     }
 
     @MainActor
@@ -104,7 +132,7 @@ enum RenderCheck {
                     installer: HelperInstaller(),
                     onOpenRules: {}, onOpenCurve: {}, onOpenSettings: {}, onQuit: {}
                 )
-                    .background(Color(nsColor: .windowBackgroundColor))
+                    .background(Palette.resolve(schemeValue()).panelFill)
             )
         case "popover-cores":
             // 展开态：验证「点了展开之后」的内容真的在可视区内（曾经的 bug 是
@@ -116,7 +144,7 @@ enum RenderCheck {
                     initialShowCores: true,
                     onOpenRules: {}, onOpenCurve: {}, onOpenSettings: {}, onQuit: {}
                 )
-                    .background(Color(nsColor: .windowBackgroundColor))
+                    .background(Palette.resolve(schemeValue()).panelFill)
             )
         default:
             FileHandle.standardError.write(Data("unknown target: \(target)\n".utf8))
@@ -139,11 +167,16 @@ enum RenderCheck {
             }
         }
 
-        let base = AnyView(content.environment(\.colorScheme, .dark))
+        // 顺序要紧：`funfanTheme()` 在内侧读 `colorScheme`，`environment` 必须在外侧，
+        // 否则它读到的是系统外观而不是 `--scheme` 指定的那一套。
+        let base = AnyView(content.funfanTheme().environment(\.colorScheme, schemeValue()))
+        let flat = CommandLine.arguments.contains("--flat")
+            ? AnyView(base.environment(\.renderFlattensScroll, true))
+            : base
         // 强制把焦点环画出来（ImageRenderer 不参与响应者链，本来拿不到焦点）
         let themed = CommandLine.arguments.contains("--force-focus")
-            ? AnyView(base.environment(\.forceFocusRing, true))
-            : base
+            ? AnyView(flat.environment(\.forceFocusRing, true))
+            : flat
         let renderer = ImageRenderer(content: themed)
         renderer.scale = Double(scaleValue())
 

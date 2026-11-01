@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
-    private var popoverHosting: NSHostingController<MenuBarView>?
+    private var popoverHosting: NSHostingController<AnyView>?
     private var popoverSizeObservation: NSKeyValueObservation?
     private let monitor = MonitorStore()
     private let control = ControlStore()
@@ -66,6 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 self.updateTitle(cpu: self.monitor.cpuAverage)
             }
             .store(in: &cancellables)
+
+        // 外观切换：设置页一改就贴到所有已存在的窗口（含设置窗口自己）。
+        settings.onAppearanceChange = { [weak self] appearance in
+            self?.applyAppearance(appearance)
+        }
 
         // 能力出错（helper 不可用 / 连不上）时自动落一份系统信息，
         // 用户报 bug 时直接取文件，不用再教他跑命令。
@@ -248,15 +253,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.delegate = self
 
         let hosting = NSHostingController(
-            rootView: MenuBarView(
-                monitor: monitor,
-                control: control,
-                diagnostics: diagnostics,
-                installer: helperInstaller,
-                onOpenRules: { [weak self] in self?.showRulesWindow() },
-                onOpenCurve: { [weak self] in self?.showCurveWindow() },
-                onOpenSettings: { [weak self] in self?.showSettingsWindow() },
-                onQuit: { NSApp.terminate(nil) }
+            rootView: AnyView(
+                MenuBarView(
+                    monitor: monitor,
+                    control: control,
+                    diagnostics: diagnostics,
+                    installer: helperInstaller,
+                    onOpenRules: { [weak self] in self?.showRulesWindow() },
+                    onOpenCurve: { [weak self] in self?.showCurveWindow() },
+                    onOpenSettings: { [weak self] in self?.showSettingsWindow() },
+                    onQuit: { NSApp.terminate(nil) }
+                )
+                // 色令牌由根视图注入（见 Theme.swift）。必须挂在 rootView 上：
+                // 子视图靠 `@Environment(\.palette)` 取，漏了就会落回深色兜底。
+                .funfanTheme()
             )
         )
         // 让 hosting 自己把理想尺寸报上来，否则 popover 会一直用首次显示时的固定高度
@@ -498,6 +508,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 popover.contentSize = size
             }
         }
+        // 面板的窗口是 AppKit 在 show 时才建的，所以外观必须在这里补一次，
+        // 否则用户切换外观后第一次打开面板仍是旧外观。
+        applyAppearance(settings.appearance)
         refreshVisibility()
     }
 
@@ -535,13 +548,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         let hosting = NSHostingController(
-            rootView: RulesView(rules: rules, control: control)
+            rootView: AnyView(RulesView(rules: rules, control: control).funfanTheme())
         )
         let window = NSWindow(contentViewController: hosting)
         window.title = "FunFan · 自动调速规则"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 560, height: 460))
+        window.appearance = settings.appearance.nsAppearance
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -560,13 +574,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         let hosting = NSHostingController(
-            rootView: CurveEditorView(store: curve, control: control, monitor: monitor)
+            rootView: AnyView(CurveEditorView(store: curve, control: control, monitor: monitor).funfanTheme())
         )
         let window = NSWindow(contentViewController: hosting)
         window.title = "FunFan · 温度曲线"
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 640, height: 540))
+        window.appearance = settings.appearance.nsAppearance
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -585,23 +600,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         let hosting = NSHostingController(
-            rootView: SettingsView(
-                settings: settings,
-                control: control,
-                diagnostics: diagnostics,
-                installer: helperInstaller
+            rootView: AnyView(
+                SettingsView(
+                    settings: settings,
+                    control: control,
+                    diagnostics: diagnostics,
+                    installer: helperInstaller
+                )
+                .funfanTheme()
             )
         )
         let window = NSWindow(contentViewController: hosting)
         window.title = "FunFan · 设置"
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 540, height: 700))
+        window.setContentSize(NSSize(width: 540, height: 580))
+        window.appearance = settings.appearance.nsAppearance
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
         settingsWindow = window
+    }
+
+    // MARK: - 外观
+
+    /// 把「跟随系统 / 浅色 / 深色」贴到每个窗口。
+    ///
+    /// 两个决定：
+    /// 1. **不用 `NSApp.appearance`**。那是全局覆盖，菜单栏图标（模板图）和系统
+    ///    弹出面板会一起反转，用户会觉得「整个系统都变了」，而设置里写的是
+    ///    「本 App 的外观」；
+    /// 2. **已存在的窗口要就地更新**，不能只影响新建窗口。否则用户点完「深色」，
+    ///    已经开着的设置窗口还是浅的，得关掉重开——复审里「切换时机」那一条
+    ///    要解决的就是这个。
+    private func applyAppearance(_ appearance: SettingsStore.Appearance) {
+        let ns = appearance.nsAppearance
+        for window in [rulesWindow, curveWindow, settingsWindow].compactMap({ $0 }) {
+            window.appearance = ns
+        }
+        popoverHosting?.view.window?.appearance = ns
     }
 
     // MARK: - 系统事件

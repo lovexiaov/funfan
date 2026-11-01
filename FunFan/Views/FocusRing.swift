@@ -36,13 +36,15 @@ private struct FunFanFocusRing: ViewModifier {
     /// 只做观测，**不改变可聚焦性**：控件能不能被 Tab 到仍由系统的全键盘控制决定。
     @FocusState private var isFocused: Bool
     @Environment(\.forceFocusRing) private var forced
+    @Environment(\.palette) private var palette
 
     func body(content: Content) -> some View {
         content
             .focused($isFocused)
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius + outset, style: .continuous)
-                    .strokeBorder(Theme.accent, lineWidth: 2)
+                    // 焦点环是图形，走 accentFill（浅色下用深一点的蓝才够 3:1）
+                    .strokeBorder(palette.accentFill, lineWidth: 2)
                     .padding(-outset)
                     .opacity(isFocused || forced ? 1 : 0)
                     .allowsHitTesting(false)

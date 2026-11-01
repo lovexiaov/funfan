@@ -4,8 +4,10 @@ import FunFanCore
 /// 曲线编辑窗口：拖拽折线 + 安全下限可视化 + 预设。
 ///
 /// 三个刻意的设计选择：
-/// 1. **红色区域是「你画不到的地方」**：安全下限随温度线性抬升，画在曲线下方，
+/// 1. **斜纹区是「你画不到的地方」**：安全下限随温度线性抬升，画在曲线下方，
 ///    用户拖到里面会被弹回去。与其在文字里解释「不会低于安全值」，不如画出来。
+///    这里刻意**不用红色**——红色在本 App 里只表示「真的热了」（≥75℃），
+///    安全下限是正常机制而不是危险信号，用红色会被误读成「这块区域很危险」。
 /// 2. **顶部同时显示「曲线给的」与「实际下发的」**：两者不一致时说明安全下限接管了，
 ///    这是用户最需要知道的一件事，也是消除「我明明画了 30% 怎么还在转」的疑惑。
 /// 3. **步进 0.5℃ / 10 RPM**：比这更细的差别 SMC 侧体现不出来，只会让数字乱跳。
@@ -14,6 +16,8 @@ struct CurveEditorView: View {
     @ObservedObject var store: CurveStore
     @ObservedObject var control: ControlStore
     @ObservedObject var monitor: MonitorStore
+
+    @Environment(\.palette) private var palette
 
     @State private var draggingIndex: Int?
     @State private var selectedIndex: Int?
@@ -27,15 +31,15 @@ struct CurveEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().opacity(0.4)
+            Divider().overlay(palette.divider)
             canvasSection
-            Divider().opacity(0.4)
+            Divider().overlay(palette.divider)
             presetsRow
-            Divider().opacity(0.4)
+            Divider().overlay(palette.divider)
             footer
         }
         .frame(minWidth: 620, minHeight: 520)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(palette.panelFill)
     }
 
     // MARK: - 头部
@@ -44,29 +48,30 @@ struct CurveEditorView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("温度曲线")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(Theme.Typo.title)
+                    .foregroundStyle(palette.textPrimary)
                 if let preset = store.preset {
                     Text(preset.label)
-                        .font(.system(size: 9, weight: .medium))
+                        .font(Theme.Typo.metaStrong)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
-                        .background(Theme.accent.opacity(0.16), in: Capsule())
-                        .foregroundStyle(Theme.accent)
+                        .background(palette.accentWash, in: Capsule())
+                        .foregroundStyle(palette.accentText)
                 } else {
                     Text("自定义")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(Theme.Typo.metaStrong)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
-                        .background(Color.primary.opacity(0.08), in: Capsule())
-                        .foregroundStyle(.secondary)
+                        .background(palette.insetFill, in: Capsule())
+                        .foregroundStyle(palette.textSecondary)
                 }
                 Spacer()
                 liveSummary
             }
 
-            Text("拖动控制点改变映射；红色区域是安全下限，曲线拖不进去。")
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+            Text("拖动控制点改变映射；斜纹区域是安全下限，曲线拖不进去。")
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textTertiary)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
@@ -76,13 +81,16 @@ struct CurveEditorView: View {
     private var liveSummary: some View {
         HStack(spacing: 10) {
             if let die = monitor.hottestCelsius {
-                statChip("最热", String(format: "%.0f℃", die), color: Theme.color(forCelsius: die))
+                HStack(spacing: 4) {
+                    TemperatureIndicator(level: .init(die), color: palette.temperature(die), size: 6)
+                    statChip("最热", String(format: "%.0f℃", die), color: palette.textPrimary)
+                }
             }
             if let die = monitor.hottestCelsius, let curveRpm = store.curve.rpm(at: die) {
-                statChip("曲线", String(format: "%.0f", curveRpm), color: .secondary)
+                statChip("曲线", String(format: "%.0f", curveRpm), color: palette.textPrimary)
             }
             if let commanded = control.automatedRpm {
-                statChip("下发", String(format: "%.0f", commanded), color: Theme.accent)
+                statChip("下发", String(format: "%.0f", commanded), color: palette.accentText)
             }
         }
     }
@@ -90,15 +98,15 @@ struct CurveEditorView: View {
     private func statChip(_ label: String, _ value: String, color: Color) -> some View {
         HStack(spacing: 4) {
             Text(label)
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textTertiary)
             Text(value)
-                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .font(Theme.Typo.metaValueStrong)
                 .foregroundStyle(color)
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .background(palette.insetFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     // MARK: - 画布
@@ -109,7 +117,7 @@ struct CurveEditorView: View {
 
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(0.04))
+                    .fill(palette.insetFill)
 
                 grid(in: rect)
                 safetyBand(in: rect)
@@ -180,20 +188,40 @@ struct CurveEditorView: View {
                 path.addLine(to: CGPoint(x: rect.maxX, y: y))
             }
         }
-        .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+        .stroke(palette.divider, lineWidth: 0.5)
     }
 
     /// 安全下限区域：画不出曲线的地方。
+    ///
+    /// 用**中性斜纹**而不是红色色块。原来的红色半透明带会被读成「这块区域很危险」，
+    /// 但安全下限其实是保护机制；更要紧的是红色在本 App 里已经表示「≥75℃ 过热」，
+    /// 两者同色会让用户在最需要分辨的时候分不清。
     private func safetyBand(in rect: CGRect) -> some View {
-        ZStack(alignment: .topLeading) {
-            floorPath(in: rect, closeToBottom: true)
-                .fill(Theme.hot.opacity(0.10))
+        let region = floorPath(in: rect, closeToBottom: true)
+        return ZStack(alignment: .topLeading) {
+            region.fill(palette.textPrimary.opacity(0.045))
+            hatch(in: rect)
+                .stroke(palette.textTertiary.opacity(0.30), lineWidth: 1)
+                .mask(region.fill(Color.black))
             floorPath(in: rect, closeToBottom: false)
                 .stroke(
-                    Theme.hot.opacity(0.55),
+                    palette.textTertiary.opacity(0.65),
                     style: StrokeStyle(lineWidth: 1, dash: [4, 3])
                 )
         }
+    }
+
+    /// 45° 斜纹，裁剪到安全下限区域内（作为「不可用区域」的通用视觉语言，
+    /// 与红/橙无关，色觉障碍用户也能看出这是「另一类区域」）。
+    private func hatch(in rect: CGRect, spacing: CGFloat = 7) -> Path {
+        var path = Path()
+        var x = rect.minX - rect.height
+        while x < rect.maxX {
+            path.move(to: CGPoint(x: x, y: rect.maxY))
+            path.addLine(to: CGPoint(x: x + rect.height, y: rect.minY))
+            x += spacing
+        }
+        return path
     }
 
     private func floorPath(in rect: CGRect, closeToBottom: Bool) -> Path {
@@ -226,7 +254,7 @@ struct CurveEditorView: View {
         path.addLine(to: CGPoint(x: xPos(last.celsius, in: rect), y: rect.maxY))
         path.addLine(to: CGPoint(x: xPos(first.celsius, in: rect), y: rect.maxY))
         path.closeSubpath()
-        return AnyView(path.fill(Theme.accent.opacity(0.12)))
+        return AnyView(path.fill(palette.accentFill.opacity(0.14)))
     }
 
     private func curveStroke(in rect: CGRect) -> some View {
@@ -236,11 +264,15 @@ struct CurveEditorView: View {
             if index == 0 { path.move(to: location) } else { path.addLine(to: location) }
         }
         return path.stroke(
-            Theme.accent,
+            palette.accentFill,
             style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
         )
     }
 
+    /// 当前温度标记：中性虚线 + 曲线上一个点。
+    ///
+    /// 原来用琥珀色——和顶部「最热」数值的琥珀色重复，两条线（温度线、安全边界）
+    /// 又都是彩色，画布上三四种颜色互相抢。现在只有曲线本身带色。
     @ViewBuilder
     private func currentMarker(in rect: CGRect) -> some View {
         if let die = monitor.hottestCelsius, tempRange.contains(die) {
@@ -249,11 +281,11 @@ struct CurveEditorView: View {
                 path.move(to: CGPoint(x: x, y: rect.minY))
                 path.addLine(to: CGPoint(x: x, y: rect.maxY))
             }
-            .stroke(Theme.warm.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            .stroke(palette.textSecondary.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
 
             if let rpm = store.curve.rpm(at: die) {
                 Circle()
-                    .fill(Theme.warm)
+                    .fill(palette.accentFill)
                     .frame(width: 7, height: 7)
                     .position(x: x, y: yPos(rpm, in: rect))
             }
@@ -264,34 +296,38 @@ struct CurveEditorView: View {
         ForEach(Array(store.curve.points.enumerated()), id: \.offset) { index, point in
             let isActive = draggingIndex == index || selectedIndex == index
             Circle()
-                .fill(Color(nsColor: .windowBackgroundColor))
+                .fill(palette.cardFill)
                 .overlay(
-                    Circle().strokeBorder(Theme.accent, lineWidth: isActive ? 2.5 : 2)
+                    Circle().strokeBorder(palette.accentFill, lineWidth: isActive ? 2.5 : 2)
                 )
                 .frame(width: isActive ? 13 : 10, height: isActive ? 13 : 10)
-                .shadow(color: Theme.accent.opacity(isActive ? 0.45 : 0), radius: 4)
+                .shadow(color: palette.accentFill.opacity(isActive ? 0.45 : 0), radius: 4)
                 .position(x: xPos(point.celsius, in: rect), y: yPos(point.rpm, in: rect))
                 .animation(.easeOut(duration: 0.12), value: isActive)
                 .accessibilityLabel("控制点 \(Int(point.celsius))℃ \(Int(point.rpm)) 转")
         }
     }
 
+    /// 坐标轴刻度。
+    ///
+    /// 字号从 8pt 抬到 11pt：8pt 是复审里最小的文字，而它承担的是「读数」——
+    /// 越需要看清的东西越小，是这次要修的核心问题之一。
     private func axisLabels(in rect: CGRect, size: CGSize) -> some View {
         ZStack(alignment: .topLeading) {
             // 转速刻度（左）
             ForEach(0...4, id: \.self) { step in
                 let rpm = limits.minRpm + (limits.normalizedMax - limits.minRpm) * Double(step) / 4
                 Text(String(format: "%.0f", rpm))
-                    .font(.system(size: 8).monospacedDigit())
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 40, alignment: .trailing)
-                    .position(x: 24, y: yPos(rpm, in: rect))
+                    .font(Theme.Typo.metaValue)
+                    .foregroundStyle(palette.textTertiary)
+                    .frame(width: 42, alignment: .trailing)
+                    .position(x: 25, y: yPos(rpm, in: rect))
             }
             // 温度刻度（下）
             ForEach([30, 50, 70, 90], id: \.self) { celsius in
                 Text("\(celsius)°")
-                    .font(.system(size: 8).monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .font(Theme.Typo.metaValue)
+                    .foregroundStyle(palette.textTertiary)
                     .position(x: xPos(Double(celsius), in: rect), y: size.height - 12)
             }
         }
@@ -337,8 +373,8 @@ struct CurveEditorView: View {
     private var presetsRow: some View {
         HStack(spacing: 8) {
             Text("预设")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textSecondary)
 
             ForEach(CurvePreset.allCases) { preset in
                 Button {
@@ -347,20 +383,21 @@ struct CurveEditorView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(preset.label)
-                            .font(.system(size: 11, weight: store.preset == preset ? .semibold : .regular))
+                            .font(.system(size: 12, weight: store.preset == preset ? .semibold : .regular))
+                            .foregroundStyle(palette.textPrimary)
                         Text(preset.detail)
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
+                            .font(Theme.Typo.meta)
+                            .foregroundStyle(palette.textSecondary)
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
                     .background(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(store.preset == preset ? Theme.accent.opacity(0.16) : Color.primary.opacity(0.05))
+                            .fill(store.preset == preset ? palette.accentWash : palette.insetFill)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(store.preset == preset ? Theme.accent.opacity(0.5) : .clear, lineWidth: 0.8)
+                            .strokeBorder(store.preset == preset ? palette.accentFill.opacity(0.5) : palette.cardStroke, lineWidth: 0.8)
                     )
                     .contentShape(Rectangle())
                 }
@@ -405,8 +442,8 @@ struct CurveEditorView: View {
             Spacer()
 
             Text("\(store.curve.points.count) 个控制点")
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textTertiary)
 
             FunFanButton(title: "恢复均衡") {
                 store.resetToBalanced()

@@ -15,6 +15,9 @@ struct MenuBarView: View {
 
     @State private var showCores: Bool
 
+    @Environment(\.palette) private var palette
+    @Environment(\.renderFlattensScroll) private var flattenScroll
+
     /// `initialShowCores` 只给离屏渲染走查用（`--render popover-cores`），
     /// 正常运行时展开状态由用户点击决定。
     init(
@@ -62,14 +65,15 @@ struct MenuBarView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Image(systemName: "fanblades.fill")
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(palette.accentFill)
             Text("FunFan")
-                .font(Theme.titleFont)
+                .font(Theme.Typo.title)
+                .foregroundStyle(palette.textPrimary)
             Spacer()
             if let date = monitor.lastSample {
                 Text(date, style: .relative)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .font(Theme.Typo.meta)
+                    .foregroundStyle(palette.textTertiary)
             }
             Button(action: onOpenSettings) {
                 Image(systemName: "gearshape")
@@ -78,7 +82,7 @@ struct MenuBarView: View {
             .buttonStyle(.plain)
             // 只有图标，环要比字形让出去更多才不至于像个紧箍
             .funfanFocusRing(cornerRadius: 5, outset: 4)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(palette.textSecondary)
             .help("设置")
             .accessibilityLabel("设置")
         }
@@ -94,17 +98,18 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.warm)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.attention)
                 Text(control.conflictSource.map { "\($0) 正在控制风扇" } ?? "其他程序正在控制风扇")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(Theme.Typo.metaStrong)
+                    .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 0)
             }
 
             Text(control.conflict.map(\.summary).joined(separator: "；")
                  + "。FunFan 已暂停接管，避免两个程序互相覆盖转速。退出对方软件后点「重新检测」。")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 6) {
@@ -120,7 +125,11 @@ struct MenuBarView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Theme.warm.opacity(0.10))
+                .fill(palette.attentionWash)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(palette.attention.opacity(0.28), lineWidth: 0.5)
         )
     }
 
@@ -145,8 +154,8 @@ struct MenuBarView: View {
                     }
                 } else {
                     Text("未检测到风扇")
-                        .font(Theme.labelFont)
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Typo.meta)
+                        .foregroundStyle(palette.textSecondary)
                 }
             }
             Spacer(minLength: 0)
@@ -158,11 +167,12 @@ struct MenuBarView: View {
     private func detailRow(_ label: String, _ value: String) -> some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textSecondary)
                 .frame(width: 32, alignment: .leading)
             Text(value)
-                .font(Theme.smallValueFont)
+                .font(Theme.Typo.smallValue)
+                .foregroundStyle(palette.textPrimary)
         }
     }
 
@@ -172,12 +182,12 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("硬件温度")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Typo.metaStrong)
+                    .foregroundStyle(palette.textSecondary)
                 Spacer()
                 Text("\(monitor.sensorCount) 个传感器")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .font(Theme.Typo.meta)
+                    .foregroundStyle(palette.textTertiary)
             }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
@@ -216,13 +226,13 @@ struct MenuBarView: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .rotationEffect(.degrees(showCores ? 90 : 0))
                 Text(showCores ? "收起各核心温度" : "展开各核心温度")
-                    .font(.system(size: 10))
+                    .font(Theme.Typo.meta)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(Theme.accent)
+            .foregroundStyle(palette.accentText)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -231,40 +241,59 @@ struct MenuBarView: View {
         .help(showCores ? "收起核心布局与温度探测点" : "展开核心布局与各簇温度探测点")
     }
 
+    /// 温度格。
+    ///
+    /// 数值一律 `textPrimary`：原来四格全绿时，颜色既没有区分度又把主数据降级了。
+    /// 状态交给左侧指示物（形态 + 颜色双通道）。
     private func tempChip(_ label: String, _ value: Double?) -> some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(Theme.color(forCelsius: value))
-                .frame(width: 6, height: 6)
+        HStack(spacing: 7) {
+            TemperatureIndicator(level: .init(value), color: palette.temperature(value))
             Text(label)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textSecondary)
             Spacer(minLength: 0)
-            Text(value.map { String(format: "%.0f°", $0) } ?? "—")
-                .font(Theme.smallValueFont)
-                .foregroundStyle(Theme.color(forCelsius: value))
+            if let value {
+                Text(String(format: "%.0f°", value))
+                    .font(Theme.Typo.smallValue)
+                    .foregroundStyle(palette.textPrimary)
+            } else {
+                Text("—")
+                    .font(Theme.Typo.smallValue)
+                    .foregroundStyle(palette.textTertiary)
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(cardBackground)
     }
 
-    /// 展开后的全部温度细节：**限高滚动**，避免 P 簇 18 个探测点把 popover 撑成
+    /// 展开后的全部温度细节：**限高滚动**，避免 75 个探测点把 popover 撑成
     /// 几十行高。上面是「真实核心布局矩阵」（一一对应到每个物理核），下面是各簇
     /// 探测点的紧凑网格（两列）。
+    @ViewBuilder
     private var expandedThermalDetail: some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 10) {
-                if let topo = monitor.chipTopology {
-                    coreMatrixCard(topo)
-                }
-                ForEach(monitor.coreGroups) { group in
-                    probeClusterBlock(group)
-                }
+        if flattenScroll {
+            // 仅走查用（`--render ... --flat`）：ScrollView 的内容离屏渲染不出来，
+            // 摊平后才能检查排版是否真的放得下。
+            thermalDetailContent
+        } else {
+            ScrollView(.vertical, showsIndicators: true) {
+                thermalDetailContent
             }
-            .padding(.top, 2)
+            .frame(maxHeight: 280)
         }
-        .frame(maxHeight: 280)
+    }
+
+    private var thermalDetailContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let topo = monitor.chipTopology {
+                coreMatrixCard(topo)
+            }
+            ForEach(monitor.coreGroups) { group in
+                probeClusterBlock(group)
+            }
+        }
+        .padding(.top, 2)
     }
 
     /// 真实核心布局：方块数 = 系统接口读到的 P/E/GPU 核数，**一一对应每个物理核**
@@ -273,8 +302,8 @@ struct MenuBarView: View {
     private func coreMatrixCard(_ topo: ChipTopology) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("核心布局（真实核数）")
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textTertiary)
 
             coreRow("性能核", count: topo.performanceCores, prefix: "P",
                     average: monitor.coreGroups.first(where: { $0.id == "cpu-performance" })?.average)
@@ -288,8 +317,8 @@ struct MenuBarView: View {
             }
 
             Text("SMC 无逐核读数，方块按所在簇均温着色")
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textTertiary)
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -298,20 +327,23 @@ struct MenuBarView: View {
 
     private func coreRow(_ label: String, count: Int, prefix: String, average: Double?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
+                TemperatureIndicator(level: .init(average), color: palette.temperature(average), size: 6)
                 Text(label)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Typo.meta)
+                    .foregroundStyle(palette.textSecondary)
                 if let average {
                     Text(String(format: "%.1f°", average))
-                        .font(.system(size: 9, weight: .medium).monospacedDigit())
-                        .foregroundStyle(Theme.color(forCelsius: average))
+                        .font(Theme.Typo.metaValue)
+                        .foregroundStyle(palette.textPrimary)
                 }
                 Spacer(minLength: 0)
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 22), spacing: 4)], spacing: 4) {
+            // 10 列等宽：三行方块同宽、永不因滚动条占位而换行（曾用 adaptive 时
+            // GPU 行的第 10 个方块被挤到下一行）。
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 10), spacing: 4) {
                 ForEach(0..<count, id: \.self) { i in
-                    coreTile("\(prefix)\(i)", color: Theme.color(forCelsius: average))
+                    coreTile("\(prefix)\(i)", color: palette.temperature(average))
                 }
             }
         }
@@ -320,37 +352,39 @@ struct MenuBarView: View {
     private func coreTile(_ title: String, color: Color) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(color.opacity(0.20))
+                .fill(color.opacity(0.18))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .strokeBorder(color.opacity(0.5), lineWidth: 0.5)
+                        .strokeBorder(color.opacity(0.45), lineWidth: 0.5)
                 )
             Text(title)
-                .font(.system(size: 8, weight: .medium).monospacedDigit())
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
                 .foregroundStyle(color)
         }
-        .frame(width: 22, height: 18)
+        .frame(height: 20)
     }
 
     /// 单个簇的探测点：紧凑两列网格（替代原来逐条整行），从视觉上收拢「散」的感觉。
     /// 仍明确标注探测点数量 ≠ 核数，避免再次被误读成逐核。
     private func probeClusterBlock(_ group: CoreGroup) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(spacing: 6) {
+                TemperatureIndicator(level: .init(group.average), color: palette.temperature(group.average), size: 6)
                 Text(group.title)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(Theme.Typo.metaStrong)
+                    .foregroundStyle(palette.textPrimary)
                 Spacer()
                 Text(String(format: "%.1f°", group.average))
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(Theme.color(forCelsius: group.average))
+                    .font(Theme.Typo.metaValue)
+                    .foregroundStyle(palette.textPrimary)
             }
             Text("\(group.sensorCount) 个探测点（非逐核）")
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textTertiary)
             if group.sensors.isEmpty {
                 Text("（无传感器）")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
+                    .font(Theme.Typo.meta)
+                    .foregroundStyle(palette.textTertiary)
             } else {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 4) {
                     ForEach(Array(group.sensors.enumerated()), id: \.offset) { _, sensor in
@@ -362,18 +396,23 @@ struct MenuBarView: View {
         .padding(.leading, 4)
     }
 
+    /// 单个探测点。
+    ///
+    /// 指示点负责颜色（5pt 的小色块已经不承担可读性），数值改成 `textPrimary`——
+    /// 75 个点如果全部着温度色，展开区会变成一片绿/琥珀的「彩色文本墙」，
+    /// 反而看不出哪个点真的偏高。
     private func probeChip(_ key: String, _ value: Double) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(Theme.color(forCelsius: value))
-                .frame(width: 5, height: 5)
+        HStack(spacing: 5) {
+            // 用带形态的指示物（点 / 环 / 三角）而不是纯色点：浅色下 warm 是深棕、
+            // cool 是深绿，色相都偏深，单靠颜色在 75 个点的网格里几乎分不出来。
+            TemperatureIndicator(level: .init(value), color: palette.temperature(value), size: 6)
             Text(key)
-                .font(.system(size: 9))
-                .foregroundStyle(.secondary)
+                .font(Theme.Typo.metaValue)
+                .foregroundStyle(palette.textSecondary)
             Spacer(minLength: 0)
             Text(String(format: "%.1f°", value))
-                .font(.system(size: 9).monospacedDigit())
-                .foregroundStyle(Theme.color(forCelsius: value))
+                .font(Theme.Typo.metaValue)
+                .foregroundStyle(palette.textPrimary)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
@@ -385,12 +424,12 @@ struct MenuBarView: View {
     private func chipTopologyCard(_ topo: ChipTopology) -> some View {
         HStack(alignment: .center, spacing: 6) {
             Text(topo.chipName)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.primary)
+                .font(Theme.Typo.metaStrong)
+                .foregroundStyle(palette.textPrimary)
             Spacer()
             Text("\(topo.performanceCores)P + \(topo.efficiencyCores)E · \(topo.gpuCores) 核 GPU")
-                .font(.system(size: 9))
-                .foregroundStyle(.secondary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textSecondary)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -403,24 +442,27 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("电池")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Typo.metaStrong)
+                    .foregroundStyle(palette.textSecondary)
                 Spacer()
+                // 「充电中」不再借用温度轴的绿色：状态由图标（bolt）承担，
+                // 颜色留给真正的温度指标，界面轴才不会和温度轴混在一起。
                 if monitor.battery.isCharging {
                     Label("充电中", systemImage: "bolt.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Theme.cool)
+                        .font(Theme.Typo.meta)
+                        .foregroundStyle(palette.textSecondary)
                 } else if monitor.battery.externalConnected {
                     Text("外接电源")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Typo.meta)
+                        .foregroundStyle(palette.textSecondary)
                 }
             }
 
             HStack(spacing: 14) {
                 if let pct = monitor.battery.percentage {
                     Text(String(format: "%.0f%%", pct))
-                        .font(Theme.valueFont)
+                        .font(Theme.Typo.value)
+                        .foregroundStyle(palette.textPrimary)
                 }
                 if let health = monitor.battery.health {
                     smallStat("健康", String(format: "%.0f%%", health))
@@ -441,10 +483,11 @@ struct MenuBarView: View {
     private func smallStat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(label)
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textTertiary)
             Text(value)
-                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .font(Theme.Typo.metaValueStrong)
+                .foregroundStyle(palette.textPrimary)
         }
     }
 
@@ -467,7 +510,8 @@ struct MenuBarView: View {
                         if !editing { control.apply() }
                     }
                     Text(String(format: "%.0f", control.fixedRpm))
-                        .font(Theme.smallValueFont)
+                        .font(Theme.Typo.smallValue)
+                        .foregroundStyle(palette.textPrimary)
                         .frame(width: 44, alignment: .trailing)
                 }
             }
@@ -482,8 +526,9 @@ struct MenuBarView: View {
 
             if let message = control.message {
                 Text(message)
-                    .font(.system(size: 10))
-                    .foregroundStyle(control.helperStatus.isReady ? .secondary : Theme.warm)
+                    .font(Theme.Typo.meta)
+                    .foregroundStyle(control.helperStatus.isReady ? palette.textSecondary : palette.attention)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if !control.helperStatus.isReady {
@@ -501,17 +546,20 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 5) {
                 Image(systemName: "lock.shield")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.warm)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.attention)
+                // 这是**阻断性**说明（没装组件就完全控制不了风扇），
+                // 原来用 11pt 比正文 12pt 还小，属于「越重要越小」。
                 Text("只能监控，还不能控制风扇")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(Theme.Typo.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 0)
             }
 
             Text(installer.note
                  ?? "控制风扇需要安装一个后台组件（只装一次）。它只做一件事：代表 FunFan 写转速，FunFan 退出就立刻交还系统。")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 6) {
@@ -529,8 +577,8 @@ struct MenuBarView: View {
 
             if let error = installer.error {
                 Text(error)
-                    .font(.system(size: 9))
-                    .foregroundStyle(Theme.hot)
+                    .font(Theme.Typo.meta)
+                    .foregroundStyle(palette.error)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -544,18 +592,18 @@ struct MenuBarView: View {
         HStack(spacing: 8) {
             if let rpm = control.automatedRpm {
                 Circle()
-                    .fill(Theme.accent)
+                    .fill(palette.accentFill)
                     .frame(width: 6, height: 6)
                 Text(String(format: "规则接管中 · %.0f RPM", rpm))
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(Theme.accent)
+                    .font(Theme.Typo.bodyStrong)
+                    .foregroundStyle(palette.accentText)
             } else {
                 Circle()
-                    .fill(Color.secondary.opacity(0.5))
+                    .strokeBorder(palette.textTertiary, lineWidth: 1)
                     .frame(width: 6, height: 6)
                 Text("规则监控中 · 未触发")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Typo.body)
+                    .foregroundStyle(palette.textSecondary)
             }
 
             Spacer(minLength: 0)
@@ -563,8 +611,8 @@ struct MenuBarView: View {
             Button("编辑规则…") { onOpenRules() }
                 .buttonStyle(.plain)
                 .funfanFocusRing(cornerRadius: 5, outset: 3)
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.accent)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.accentText)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -574,18 +622,24 @@ struct MenuBarView: View {
     /// 曲线模式摘要：曲线一定会给目标，所以只需说明「现在在按曲线跑」。
     private var curveStatus: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(control.automatedRpm != nil ? Theme.accent : Color.secondary.opacity(0.5))
-                .frame(width: 6, height: 6)
+            if control.automatedRpm != nil {
+                Circle()
+                    .fill(palette.accentFill)
+                    .frame(width: 6, height: 6)
+            } else {
+                Circle()
+                    .strokeBorder(palette.textTertiary, lineWidth: 1)
+                    .frame(width: 6, height: 6)
+            }
 
             if let rpm = control.automatedRpm {
                 Text(String(format: "曲线接管中 · %.0f RPM", rpm))
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(Theme.accent)
+                    .font(Theme.Typo.bodyStrong)
+                    .foregroundStyle(palette.accentText)
             } else {
                 Text("曲线待采样 · 首帧后接管")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Typo.body)
+                    .foregroundStyle(palette.textSecondary)
             }
 
             Spacer(minLength: 0)
@@ -593,8 +647,8 @@ struct MenuBarView: View {
             Button("编辑曲线…") { onOpenCurve() }
                 .buttonStyle(.plain)
                 .funfanFocusRing(cornerRadius: 5, outset: 3)
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.accent)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.accentText)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -606,28 +660,36 @@ struct MenuBarView: View {
     private var footer: some View {
         HStack(spacing: 8) {
             Text(diagnostics.lastMessage ?? String(format: "采样 %.0f ms", monitor.sampleCostMs))
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textTertiary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 4)
             Button("诊断") { diagnostics.copyReport() }
                 .buttonStyle(.plain)
                 .funfanFocusRing(cornerRadius: 5, outset: 2)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textSecondary)
                 .help("复制完整诊断信息到剪贴板（机型/系统/SMC 能力逐项实测 + 排查建议）")
             Button("退出") { onQuit() }
                 .buttonStyle(.plain)
                 .funfanFocusRing(cornerRadius: 5, outset: 2)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textSecondary)
         }
     }
 
+    /// 卡片：浅色下白底 + 描边，边界由描边承担。
+    ///
+    /// 原来只有 `primary.opacity(0.05)` 一层填充，浅色时卡片与背景只差 1.10:1，
+    /// 看起来像「脏了的底色」而不是一张卡。
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(Color.primary.opacity(0.05))
+            .fill(palette.cardFill)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(palette.cardStroke, lineWidth: 0.5)
+            )
     }
 }
 
@@ -636,6 +698,8 @@ struct MenuBarView: View {
 struct FanRing: View {
     let actual: Double
     let limits: FanLimits?
+
+    @Environment(\.palette) private var palette
 
     private var fraction: Double {
         guard let limits, limits.normalizedMax > limits.minRpm else { return 0 }
@@ -646,11 +710,11 @@ struct FanRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.primary.opacity(0.10), lineWidth: 8)
+                .stroke(palette.track, lineWidth: 8)
             Circle()
                 .trim(from: 0, to: fraction)
                 .stroke(
-                    Theme.accent,
+                    palette.accentFill,
                     style: StrokeStyle(lineWidth: 8, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
@@ -658,10 +722,11 @@ struct FanRing: View {
 
             VStack(spacing: 1) {
                 Text(actual > 0 ? String(format: "%.0f", actual) : "—")
-                    .font(.system(size: 19, weight: .medium).monospacedDigit())
+                    .font(Theme.Typo.value)
+                    .foregroundStyle(palette.textPrimary)
                 Text("RPM")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Typo.meta)
+                    .foregroundStyle(palette.textSecondary)
             }
         }
         .frame(width: 92, height: 92)
