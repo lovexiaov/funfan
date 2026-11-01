@@ -485,5 +485,51 @@
 
 ---
 
+## M10 · 开发态启动与正式包等价（2026-11-01）
+
+**现象**：`make run` 起的 app 行为不对，`open dist/FunFan.app --args --log-popover` 起的正常。
+
+**结论：两者不是同一个程序。** `make run` 跑的是 `.build/debug/FunFan`（SwiftPM 裸二进制），
+没有 bundle 身份，于是「用户看到的行为」这一层根本不可比：
+
+| 维度 | 裸二进制（旧 `make run`） | `.app` 包 |
+|---|---|---|
+| `Bundle.main.bundleIdentifier` | `nil` | `cn.lovexiaov.fun.fan` |
+| 偏好域 | 进程名域 `FunFan` | `cn.lovexiaov.fun.fan` |
+| 登录项 / SMAppService | `isBundledApp == false`，整块不可用 | 可用 |
+| 日志归属 | 写同一份文件，与打包版混成一条时间线 | 同左 |
+
+实测（动手前）：裸域 `FunFan.controlStrategy = curve`，打包域 `= automatic` ——
+看的是两套设置，任何「策略/温度显示对不上」的对比都不成立。
+
+**排除掉的假设**（实测过，别再猜）：无 bundle 身份**不影响激活**。
+同一段 `applicationDidFinishLaunching` + `setActivationPolicy(.accessory)` + `activate`，
+裸二进制与 `.app` 里都是 `isActive = true`（`/tmp/acttest*` 对照组）。
+所以「点击异常」不能归因到「裸进程激活不了」。
+
+**改动**：
+- `build-app.sh --debug`：用 `.build/debug` 组装，Info.plist / 结构 / 签名与正式包一致；
+- `make run` = 组装 debug 包 → 结束旧实例 → `open dist/FunFan.app`；
+  裸二进制留在 `make run-raw`，并在启动前把身份差异告警打出来；
+- `make stop-running`：`open` 对已运行的应用只是激活，不换进程里的二进制 ——
+  不先结束旧实例，重建后测的仍是上一次的代码（「改了没变化」的常见来源）；
+- GUI 接管 `SIGTERM` / `SIGINT` → 走 `NSApp.terminate` → `applicationWillTerminate`
+  → `control.release()`。原本 Ctrl-C 掉 `make run` 是直接死，风扇留在手动等租约 TTL（10 s），
+  紧接着重启还会撞上「自己的残留租约」被误判第三方接管（就是 M9 记的那条遗留）；
+- 两份取证日志都加会话头（bundle id / 「裸二进制」+ 包路径 + pid + 启动参数），
+  一次运行一行，混在一起也能分清是谁写的。
+
+- Verify：`make build` 0 错误；`make test` 318 全绿（`build-app.sh` 里新写的
+  `$PROFILE（` 被 `ScriptSyntaxTests` 当场抓出，已改 `${PROFILE}`）；
+  `bash scripts/build-app.sh --debug --output /tmp/…` 产物 Info.plist 仍为
+  `cn.lovexiaov.fun.fan` + `LSUIElement`，包内二进制为 debug 档。
+- 待用户真机确认：`make run` 起来后点击/策略是否与 `make run-app` 一致；
+  `make run` 期间按 Ctrl-C，日志应出现「收到信号 15：按正常退出处理」且风扇立刻回自动。
+- Files: `FunFan/App/AppDelegate.swift`, `FunFan/DevTools/LogSession.swift`,
+  `FunFan/DevTools/PopoverClickLog.swift`, `FunFan/DevTools/ControlJournal.swift`,
+  `scripts/build-app.sh`, `Makefile`
+
+---
+
 ## 完成判据（全量）
 满足 `docs/SPEC-FunFan.md` §8 全部 12 条 Success Criteria；`make test` 全绿（单测 ≥80% 覆盖）；`make build` 产出可分发 app。
