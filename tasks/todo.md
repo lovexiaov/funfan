@@ -378,7 +378,19 @@
     （80 ms < 人可感知延迟，> 实测 27~70 ms 的交接间隔）。
   - 取证件：`global down onIcon=… mouse=… rect=…` 一行把判断依据也写进日志，
     下次失手可直接看出是「几何错」还是「事件顺序错」。
-  - Verify：`make build` 0 错误、`make test` 291 全绿；等真机日志复核。
+  - Verify（2026-11-01 真机确认）：`make build` 0 错误、`make test` 291 全绿。
+    用户实测「修好了」，日志复核如下 —— 每次点击一组，连续四次「开→关→开→关」，
+    不再出现 `global → close`：
+    ```
+    47.426 global down onIcon=true → skip
+    47.459 down onIcon=true shown=true
+    47.464 action wasShown=true → close
+    47.480 close-done visible=false
+    ```
+    几何判断同批日志里也自证正确：`mouse=(890,1067)` 落在 `rect=(862,1053,63,24)`
+    判 `onIcon=true`，点别处 `mouse=(668,117)` 判 `false`。
+  - 遗留：`--log-popover` 保留（默认关闭、不写盘），以后 UI 时序问题直接用。
+    取证日志会持续追加，不需要时删 `~/Library/Application Support/FunFan/popover-click.log` 即可。
 
 ---
 
