@@ -123,6 +123,22 @@ enum RenderCheck {
             exit(2)
         }
 
+        // `--dump-cores`：把本机真实分组与每个探测点读数打到 stdout。
+        // 用途：核对「展开各核心温度」里的探测点数、键名、簇均温是否与实现一致。
+        // 设计稿改动（docs/ui-prototype/funfan-design-v2.html）必须以这份真值为准，
+        // 肉眼看截图数不清 75 个点。
+        if CommandLine.arguments.contains("--dump-cores") {
+            if let topo = monitor.chipTopology {
+                print("TOPO \(topo.chipName) P=\(topo.performanceCores) E=\(topo.efficiencyCores) G=\(topo.gpuCores)")
+            }
+            print("SENSORS \(monitor.sensorCount)")
+            print("AVG cpu=\(String(format: "%.1f", monitor.cpuAverage ?? -1)) gpu=\(String(format: "%.1f", monitor.gpuAverage ?? -1)) ssd=\(String(format: "%.1f", monitor.ssdAverage ?? -1)) ambient=\(String(format: "%.1f", monitor.ambientAverage ?? -1))")
+            for group in monitor.coreGroups {
+                print("GROUP [\(group.title)] n=\(group.sensorCount) avg=\(String(format: "%.1f", group.average))")
+                print("  " + group.sensors.map { "\($0.key)=\(String(format: "%.1f", $0.celsius))" }.joined(separator: " "))
+            }
+        }
+
         let base = AnyView(content.environment(\.colorScheme, .dark))
         // 强制把焦点环画出来（ImageRenderer 不参与响应者链，本来拿不到焦点）
         let themed = CommandLine.arguments.contains("--force-focus")

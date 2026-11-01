@@ -138,6 +138,8 @@ svg { display: block; }
 .stage { display: flex; justify-content: center; align-items: flex-start; gap: 34px; flex-wrap: wrap; }
 .screen { display: none; }
 .screen.on { display: flex; gap: 28px; align-items: flex-start; }
+/* 画面列不参与收缩：否则弹窗会被变体列挤窄，而下面的注释块仍按 320 排版，两者错位 */
+.screen.on > div { flex: 0 0 auto; }
 
 /* 菜单栏示意（仅给 Popover 画面上方加一点上下文） */
 .menubar {
@@ -215,6 +217,15 @@ svg { display: block; }
 }
 .ind.none::before { content:""; width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); opacity: .5; }
 
+/* 画面旁的设计说明（不是产品 UI） */
+.note-block {
+  width: 320px; margin-top: 10px;
+  font-size: 11px; line-height: 1.65; color: var(--text-3);
+  border-left: 2px solid var(--card-line); padding-left: 10px;
+}
+.note-block b { color: var(--text-2); font-weight: 600; }
+.note-block code { font-family: var(--mono); font-size: 10px; color: var(--text-2); }
+
 /* 展开行 */
 .expand {
   display: flex; align-items: center; gap: 5px; width: 100%;
@@ -223,12 +234,70 @@ svg { display: block; }
 }
 .expand svg { width: 11px; height: 11px; transition: transform .15s; }
 .expand.open svg { transform: rotate(90deg); }
-.core-list { display: none; gap: 8px; }
-.core-list.open { display: grid; }
-.core-group { background: var(--inset); border-radius: 7px; padding: 8px 10px; }
-.core-group .gt { font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 5px; }
-.core-group .gr { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); padding: 2px 0; }
-.core-group .gr b { margin-left: auto; color: var(--text-1); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* 芯片拓扑卡：未展开就常驻（对应实现 chipTopologyCard）。
+   它的存在是为了回答「为什么展开的探测点数对不上核数」，所以必须先于展开行出现。 */
+.chip-card {
+  display: flex; align-items: baseline; gap: 8px;
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 7px; padding: 6px 9px;
+}
+.chip-card b { font-size: 11px; font-weight: 600; }
+.chip-card span { margin-left: auto; font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* 展开区：限高 280 滚动（对应 expandedThermalDetail 的 frame(maxHeight: 280)）。
+   内容真实为 1 张核心布局卡 + 3 个簇块 + 75 个探测点，撑不下一屏，必须能滚。 */
+.core-detail {
+  display: none; gap: 8px; max-height: 280px; overflow-y: auto;
+  padding-right: 3px; scrollbar-width: thin;
+}
+.core-detail.open { display: flex; flex-direction: column; }
+.core-detail::-webkit-scrollbar { width: 8px; }
+.core-detail::-webkit-scrollbar-thumb { background: var(--track); border-radius: 4px; }
+html[data-full-expand] .core-detail { max-height: none; overflow: visible; }
+
+/* 核心布局卡：方块数 = 系统接口读到的真实核数 */
+.core-layout {
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 7px; padding: 9px 10px; flex: none;
+}
+.core-layout .lt { font-size: 11px; color: var(--text-3); margin-bottom: 7px; }
+.core-layout .note { font-size: 11px; color: var(--text-3); margin-top: 8px; }
+.crow + .crow { margin-top: 8px; }
+.crow-h { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+.crow-h .cl { font-size: 11px; font-weight: 600; color: var(--text-2); }
+.crow-h b { font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+/* 10 列等宽网格：P(4) / E(6) / GPU(10) 三行的方块必须同宽，
+   否则「同样一颗核」在不同簇里尺寸不同，会被误读成不同量级。 */
+.tiles { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; }
+.tiles i {
+  height: 22px; border-radius: 4px; display: grid; place-items: center;
+  font-style: normal; font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums;
+}
+/* 方块按「所在簇均温」着色，不是逐核读数 */
+.tiles i.cool { color: var(--temp-cool); background: color-mix(in srgb, var(--temp-cool) 18%, transparent); box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--temp-cool) 45%, transparent); }
+.tiles i.warm { color: var(--temp-warm); background: color-mix(in srgb, var(--temp-warm) 18%, transparent); box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--temp-warm) 45%, transparent); }
+.tiles i.hot  { color: var(--temp-hot);  background: color-mix(in srgb, var(--temp-hot) 18%, transparent);  box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--temp-hot) 45%, transparent); }
+
+/* 簇块：标题 + 簇均温 + 探测点数 + 两列探测点（键名是真 SMC 键） */
+.cluster {
+  background: var(--card); border: 1px solid var(--card-line);
+  border-radius: 7px; padding: 9px 10px; flex: none;
+}
+.cluster-h { display: flex; align-items: baseline; gap: 6px; }
+.cluster-h .t { font-size: 11px; font-weight: 600; }
+.cluster-h b { margin-left: auto; font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.cluster .sub { font-size: 11px; color: var(--text-3); margin: 2px 0 7px; }
+.probes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 6px; }
+.probe {
+  display: flex; align-items: center; gap: 5px; min-width: 0;
+  background: var(--inset); border-radius: 5px; padding: 3px 6px;
+}
+.probe .ind { width: 7px; height: 7px; }
+.probe .ind.cool::before, .probe .ind.warm::before, .probe .ind.none::before { width: 5px; height: 5px; }
+.probe .ind.hot::before { border-left-width: 4px; border-right-width: 4px; border-bottom-width: 7px; }
+.probe .pk { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.probe .pv { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
 
 /* 摘要条（规则 / 曲线接管中） */
 .statusbar {
@@ -478,24 +547,130 @@ code { font-family: var(--mono); font-size: 10.5px; color: var(--text-2); }
           <span class="meta">107 个传感器</span>
         </div>
         <div class="temps">
-          <div class="temp"><span class="ind warm"></span><span class="lbl">CPU 均温</span><span class="val">68<em>°</em></span></div>
-          <div class="temp"><span class="ind cool"></span><span class="lbl">GPU 均温</span><span class="val">42<em>°</em></span></div>
-          <div class="temp"><span class="ind cool"></span><span class="lbl">SSD</span><span class="val">40<em>°</em></span></div>
+          <div class="temp"><span class="ind cool"></span><span class="lbl">CPU 均温</span><span class="val">51<em>°</em></span></div>
+          <div class="temp"><span class="ind cool"></span><span class="lbl">GPU 均温</span><span class="val">41<em>°</em></span></div>
+          <div class="temp"><span class="ind cool"></span><span class="lbl">SSD</span><span class="val">39<em>°</em></span></div>
           <div class="temp"><span class="ind none"></span><span class="lbl">环境</span><span class="val" style="color:var(--text-3)">—</span></div>
         </div>
 
+        <!-- 芯片拓扑：未展开即常驻，回答「探测点数 ≠ 核数」 -->
+        <div class="chip-card"><b>Apple M4</b><span>4P + 6E · 10 核 GPU</span></div>
+
         <button class="expand" id="expandBtn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>
-          <span>展开各核心温度</span>
+          <span id="expandLabel">展开各核心温度</span>
         </button>
-        <div class="core-list" id="coreList">
-          <div class="core-group">
-            <div class="gt">Apple M4 · 4P + 6E</div>
-            <div class="gr"><span class="ind warm"></span>P 簇（18 探测点）<b>68.4°</b></div>
-            <div class="gr"><span class="ind cool"></span>E 簇（12 探测点）<b>54.1°</b></div>
-            <div class="gr"><span class="ind cool"></span>GPU（10 探测点）<b>42.6°</b></div>
-          </div>
+        <div class="core-detail" id="coreDetail">
+      <div class="core-layout">
+        <div class="lt">核心布局（真实核数）</div>
+        <div class="crow">
+          <div class="crow-h"><span class="cl">性能核</span><b style="color:var(--temp-cool)">53.3°</b></div>
+          <div class="tiles"><i class="cool">P0</i><i class="cool">P1</i><i class="cool">P2</i><i class="cool">P3</i></div>
         </div>
+        <div class="crow">
+          <div class="crow-h"><span class="cl">能效核</span><b style="color:var(--temp-cool)">45.4°</b></div>
+          <div class="tiles"><i class="cool">E0</i><i class="cool">E1</i><i class="cool">E2</i><i class="cool">E3</i><i class="cool">E4</i><i class="cool">E5</i></div>
+        </div>
+        <div class="crow">
+          <div class="crow-h"><span class="cl">GPU 核</span><b style="color:var(--temp-cool)">41.0°</b></div>
+          <div class="tiles"><i class="cool">G0</i><i class="cool">G1</i><i class="cool">G2</i><i class="cool">G3</i><i class="cool">G4</i><i class="cool">G5</i><i class="cool">G6</i><i class="cool">G7</i><i class="cool">G8</i><i class="cool">G9</i></div>
+        </div>
+        <div class="note">SMC 无逐核读数，方块按所在簇均温着色</div>
+      </div>
+      <div class="cluster">
+        <div class="cluster-h"><span class="t">CPU · performance</span><b style="color:var(--temp-cool)">53.3°</b></div>
+        <div class="sub">41 个探测点（非逐核）</div>
+        <div class="probes">
+            <div class="probe"><span class="ind cool"></span><span class="pk">TfC0</span><span class="pv" style="color:var(--temp-cool)">40.0°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">TfC1</span><span class="pv" style="color:var(--temp-cool)">39.9°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp00</span><span class="pv" style="color:var(--temp-cool)">42.5°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp01</span><span class="pv" style="color:var(--temp-cool)">51.3°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp02</span><span class="pv" style="color:var(--temp-warm)">63.4°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp04</span><span class="pv" style="color:var(--temp-cool)">42.6°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp05</span><span class="pv" style="color:var(--temp-cool)">51.4°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp06</span><span class="pv" style="color:var(--temp-warm)">63.1°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp08</span><span class="pv" style="color:var(--temp-cool)">42.3°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp09</span><span class="pv" style="color:var(--temp-cool)">51.1°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp0A</span><span class="pv" style="color:var(--temp-warm)">63.6°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp0C</span><span class="pv" style="color:var(--temp-cool)">42.6°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp0D</span><span class="pv" style="color:var(--temp-cool)">51.4°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp0E</span><span class="pv" style="color:var(--temp-warm)">61.6°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp0U</span><span class="pv" style="color:var(--temp-cool)">43.5°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp0V</span><span class="pv" style="color:var(--temp-cool)">52.3°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp0W</span><span class="pv" style="color:var(--temp-warm)">73.8°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp0X</span><span class="pv" style="color:var(--temp-cool)">43.9°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp0Y</span><span class="pv" style="color:var(--temp-cool)">52.7°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp0Z</span><span class="pv" style="color:var(--temp-warm)">72.0°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp0a</span><span class="pv" style="color:var(--temp-cool)">43.5°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp0b</span><span class="pv" style="color:var(--temp-cool)">52.3°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp0c</span><span class="pv" style="color:var(--temp-warm)">73.5°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp0d</span><span class="pv" style="color:var(--temp-cool)">43.9°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp0e</span><span class="pv" style="color:var(--temp-cool)">52.7°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp0f</span><span class="pv" style="color:var(--temp-warm)">68.5°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp1A</span><span class="pv" style="color:var(--temp-cool)">40.5°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp1B</span><span class="pv" style="color:var(--temp-cool)">52.3°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp1C</span><span class="pv" style="color:var(--temp-warm)">60.0°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp1E</span><span class="pv" style="color:var(--temp-cool)">41.0°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp1F</span><span class="pv" style="color:var(--temp-cool)">52.8°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp1G</span><span class="pv" style="color:var(--temp-cool)">59.8°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp1Q</span><span class="pv" style="color:var(--temp-cool)">40.2°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp1R</span><span class="pv" style="color:var(--temp-cool)">52.0°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp1S</span><span class="pv" style="color:var(--temp-cool)">58.6°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp3O</span><span class="pv" style="color:var(--temp-cool)">48.4°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp3P</span><span class="pv" style="color:var(--temp-warm)">73.8°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp3S</span><span class="pv" style="color:var(--temp-cool)">45.5°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp3T</span><span class="pv" style="color:var(--temp-warm)">60.0°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tp3W</span><span class="pv" style="color:var(--temp-cool)">48.5°</span></div>
+            <div class="probe"><span class="ind warm"></span><span class="pk">Tp3X</span><span class="pv" style="color:var(--temp-warm)">73.8°</span></div>
+        </div>
+      </div>
+      <div class="cluster">
+        <div class="cluster-h"><span class="t">CPU · efficiency</span><b style="color:var(--temp-cool)">45.4°</b></div>
+        <div class="sub">16 个探测点（非逐核）</div>
+        <div class="probes">
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te04</span><span class="pv" style="color:var(--temp-cool)">39.4°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te05</span><span class="pv" style="color:var(--temp-cool)">46.6°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te06</span><span class="pv" style="color:var(--temp-cool)">51.5°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te08</span><span class="pv" style="color:var(--temp-cool)">38.6°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te09</span><span class="pv" style="color:var(--temp-cool)">45.8°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0A</span><span class="pv" style="color:var(--temp-cool)">50.9°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0G</span><span class="pv" style="color:var(--temp-cool)">38.5°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0H</span><span class="pv" style="color:var(--temp-cool)">45.7°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0I</span><span class="pv" style="color:var(--temp-cool)">50.2°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0R</span><span class="pv" style="color:var(--temp-cool)">37.8°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0S</span><span class="pv" style="color:var(--temp-cool)">45.0°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0T</span><span class="pv" style="color:var(--temp-cool)">49.6°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0U</span><span class="pv" style="color:var(--temp-cool)">43.9°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0V</span><span class="pv" style="color:var(--temp-cool)">51.5°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0W</span><span class="pv" style="color:var(--temp-cool)">42.3°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Te0X</span><span class="pv" style="color:var(--temp-cool)">49.6°</span></div>
+        </div>
+      </div>
+      <div class="cluster">
+        <div class="cluster-h"><span class="t">GPU</span><b style="color:var(--temp-cool)">41.0°</b></div>
+        <div class="sub">18 个探测点（非逐核）</div>
+        <div class="probes">
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0C</span><span class="pv" style="color:var(--temp-cool)">37.9°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0D</span><span class="pv" style="color:var(--temp-cool)">43.2°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0G</span><span class="pv" style="color:var(--temp-cool)">37.8°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0H</span><span class="pv" style="color:var(--temp-cool)">43.1°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0K</span><span class="pv" style="color:var(--temp-cool)">37.9°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0L</span><span class="pv" style="color:var(--temp-cool)">43.2°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0O</span><span class="pv" style="color:var(--temp-cool)">37.3°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0P</span><span class="pv" style="color:var(--temp-cool)">42.6°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0U</span><span class="pv" style="color:var(--temp-cool)">40.0°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0V</span><span class="pv" style="color:var(--temp-cool)">45.3°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0X</span><span class="pv" style="color:var(--temp-cool)">39.1°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0Y</span><span class="pv" style="color:var(--temp-cool)">44.4°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0d</span><span class="pv" style="color:var(--temp-cool)">38.7°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0e</span><span class="pv" style="color:var(--temp-cool)">44.0°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0j</span><span class="pv" style="color:var(--temp-cool)">38.5°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0k</span><span class="pv" style="color:var(--temp-cool)">43.8°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0m</span><span class="pv" style="color:var(--temp-cool)">38.1°</span></div>
+            <div class="probe"><span class="ind cool"></span><span class="pk">Tg0n</span><span class="pv" style="color:var(--temp-cool)">43.4°</span></div>
+        </div>
+      </div>
+    </div>
 
         <!-- 策略 -->
         <div class="seg" id="strategySeg" style="width:100%">
@@ -518,6 +693,11 @@ code { font-family: var(--mono); font-size: 10.5px; color: var(--text-2); }
             <button class="link" style="color:var(--text-2)">退出</button>
           </span>
         </div>
+      </div>
+
+      <div class="note-block">
+        展开区与 <code>MenuBarView</code> 实现 1:1 对应：<b>芯片卡（未展开就常驻）</b> → <b>核心布局矩阵</b>（方块数 = 系统接口读到的核数 P4 / E6 / G10）→ <b>三个簇的探测点网格</b>，合计 75 个探测点（41 + 16 + 18）。数据为本机真机采样（M4 · 107 传感器），键名为 SMC 真实键名；探测点数 ≠ 核数，所以两处必须同时出现。限高 280pt 内滚动（<code>frame(maxHeight: 280)</code>）。<br>
+        与实现的两处有意差异：① 字号按 v2 规范抬到 11pt（实现中探测点与方块标签为 8–9pt）；② 簇块加了卡片底与描边，探测点小格用内凹底——实现里三者同为卡片色，层级靠留白。
       </div>
     </div>
 
@@ -966,11 +1146,18 @@ if (wantScreen) {
 }
 
 // ---------- 展开核心温度 ----------
+// 文案随状态切换（实现里是 showCores ? "收起各核心温度" : "展开各核心温度"）
 const expandBtn = document.getElementById('expandBtn');
+const expandLabel = document.getElementById('expandLabel');
 expandBtn.addEventListener('click', () => {
-  expandBtn.classList.toggle('open');
-  document.getElementById('coreList').classList.toggle('open');
+  const open = expandBtn.classList.toggle('open');
+  document.getElementById('coreDetail').classList.toggle('open', open);
+  expandLabel.textContent = open ? '收起各核心温度' : '展开各核心温度';
 });
+// ?expanded=1 直接进展开态（方便截图/评审），&full=1 再取消 280 限高
+if (params.get('expanded') === '1') expandBtn.click();
+if (params.get('full') === '1') document.documentElement.setAttribute('data-full-expand', '');
+
 
 // ---------- 其它交互演示 ----------
 document.querySelectorAll('#strategySeg button').forEach(btn => {
