@@ -5,7 +5,7 @@
 
 SWIFT_FLAGS := --disable-sandbox
 
-.PHONY: help build release test run run-app app icon sign-info notarize notary-check dmg publish publish-unsigned publish-dry doctor diagnose raw status spin install-helper uninstall-helper clean
+.PHONY: help build release test run run-app app icon sign-info notarize notary-check dmg publish publish-unsigned publish-dry doctor diagnose raw status spin install-helper uninstall-helper purge-legacy clean
 
 help:
 	@echo "FunFan 开发命令："
@@ -30,6 +30,7 @@ help:
 	@echo "  make spin               真机写入验证（需要 sudo）"
 	@echo "  make install-helper     安装特权 helper（需要 sudo，开发期直装）"
 	@echo "  make uninstall-helper   卸载特权 helper（需要 sudo）"
+	@echo "  make purge-legacy       体检：列出改名前的旧包残留（只读，真清加 --apply）"
 
 build:
 	swift build $(SWIFT_FLAGS)
@@ -95,6 +96,10 @@ spin: release
 
 install-helper: release
 	sudo ./scripts/install-helper.sh
+
+# 只做体检；真删要显式带 --apply，避免一个 make 目标就把系统改了
+purge-legacy:
+	bash scripts/purge-legacy.sh
 
 uninstall-helper:
 	sudo ./scripts/install-helper.sh uninstall

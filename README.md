@@ -122,6 +122,17 @@ sudo ./.build/release/funfanctl spin --rpm 2950 --seconds 6   # 写入验证，�
 
 两种安装落在**同一个路径、同一个 label**（`cn.lovexiaov.fun.fan.helper`），所以彼此互斥；「一键安装」会自动 `bootout` 旧进程再覆盖，不需要先手动卸载。反过来，App 装过之后脚本会拒绝安装并说明原因（防止两个写手抢同一个 Mach service）。
 
+### 清理改名前的残留
+
+bundle id 从 `com.funfan.*` 迁到 `cn.lovexiaov.fun.fan` 之后，机器上的旧痕迹不会自己消失：旧 daemon 还注册着 `com.funfan.helper` 这个 Mach service，会和新 helper 同时写 SMC（风扇忽快忽慢、App 退出后不返还）。
+
+```bash
+bash scripts/purge-legacy.sh                  # 体检：只列出会清什么，不动手
+sudo bash scripts/purge-legacy.sh --apply     # 真清（系统侧 + 用户侧）
+```
+
+默认保留 `~/Library/Application Support/FunFan`（规则 / 曲线 / 诊断报告）；要一并清掉加 `--with-user-data`，它是**移进废纸篓**而不是删除，随时能捞回。要从零重装验证加 `--incl-current`，连新 helper 一起卸。
+
 ## 命令行
 
 ```bash
