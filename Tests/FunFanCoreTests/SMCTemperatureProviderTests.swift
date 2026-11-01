@@ -118,4 +118,59 @@ final class SMCTemperatureProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.readings.count, 5)
         XCTAssertEqual(snapshot.averageCPU()!, (60 + 70 + 55) / 3, accuracy: 1e-9)
     }
+
+    // MARK: - 键表计数（回答「这台机器有没有这类传感器」）
+
+    /// 键表还没枚举 → `nil`。UI 据此保持「暂无读数」，不能判成「无传感器」。
+    func testSensorCountIsNilBeforeEnumeration() {
+        let provider = SMCTemperatureProvider(
+            keyLister: { self.fakeKeys },
+            reader: { self.values()[$0] ?? 0 }
+        )
+        XCTAssertNil(provider.sensorCount(for: .ambient))
+        XCTAssertNil(provider.sensorCount(for: .ssd))
+    }
+
+    /// 计数看的是**键存在**，不是**这一帧读成功**：读失败/越界被过滤掉，
+    /// 计数依然是 1——否则唤醒瞬间会误报「这台机器没有环境传感器」。
+    func testSensorCountSurvivesUnreadableFrame() {
+        struct Boom: Error {}
+        let provider = SMCTemperatureProvider(
+            keyLister: { self.fakeKeys },
+            reader: { key in
+                if key == "TA0P" { throw Boom() }
+                return self.values()[key] ?? 0
+            }
+        )
+
+        XCTAssertTrue(provider.readings().allSatisfy { $0.descriptor.category != .ambient })
+        XCTAssertEqual(provider.sensorCount(for: .ambient), 1)
+        XCTAssertEqual(provider.sensorCount(for: .ssd), 0)
+    }
+
+    /// 不在采样范围内的类别（`.other`）也要能计数。
+    /// 本机 Mac mini M4 的 `Ta0p`/`TH0p` 就落在这里：默认不采样，但要知道它们存在。
+    func testSensorCountCoversCategoriesOutsideSamplingScope() {
+        let keys = ["Tp01", "Ta0p", "TH0p"]
+        let provider = SMCTemperatureProvider(keyLister: { keys }, reader: { _ in 30 })
+
+        XCTAssertEqual(provider.readings().count, 1, "other 不进采样")
+        XCTAssertEqual(provider.sensorCount(for: .other), 2, "但计数要能看到它们")
+        XCTAssertEqual(provider.sensorCount(for: .ambient), 0)
+    }
+
+    /// 重新枚举后计数跟着更新（机型/系统变化、睡眠唤醒重建连接）。
+    func testSensorCountFollowsRescan() {
+        var keys = ["Tp01"]
+        let provider = SMCTemperatureProvider(keyLister: { keys }, reader: { _ in 30 })
+
+        _ = provider.readings()
+        XCTAssertEqual(provider.sensorCount(for: .ambient), 0)
+
+        keys = ["Tp01", "TA0P"]
+        provider.invalidateKeyCache()
+        XCTAssertNil(provider.sensorCount(for: .ambient), "缓存失效后回到未知")
+        _ = provider.readings()
+        XCTAssertEqual(provider.sensorCount(for: .ambient), 1)
+    }
 }

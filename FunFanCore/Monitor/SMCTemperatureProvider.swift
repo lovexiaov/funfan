@@ -15,6 +15,13 @@ public final class SMCTemperatureProvider {
 
     private var descriptors: [SensorDescriptor]?
 
+    /// 未按采样范围过滤的全量键表，只用来回答「这台机器有没有这类传感器」。
+    ///
+    /// 与 `descriptors` 分开存的原因：`descriptors` 已经滤掉 `.other` 等不采样的类别，
+    /// 拿它数 `.other` 会一律得到 0——而本机恰恰有一批低温探测点（`Ta0p`/`TH0p`）
+    /// 落在 `.other` 里，「有没有」和「采不采」是两件事。
+    private var catalogDescriptors: [SensorDescriptor]?
+
     /// 需要采样的类别。默认排除 `.other`——真机上未识别传感器可达 50+ 个，
     /// 每个键都要 2 次 IPC，盲读全部会白烧 CPU（实测 180 键 ≈ 40 ms/帧）。
     private let includedCategories: Set<SensorCategory>
@@ -48,11 +55,21 @@ public final class SMCTemperatureProvider {
     /// 丢弃缓存的键表（重连 SMC、睡眠唤醒、机型变化后调用）。
     public func invalidateKeyCache() {
         descriptors = nil
+        catalogDescriptors = nil
     }
 
     /// 当前已确认的传感器描述（未枚举时为空）。
     public var knownDescriptors: [SensorDescriptor] {
         descriptors ?? []
+    }
+
+    /// 本机某类别的传感器个数；键表尚未枚举（或枚举失败）时返回 `nil`。
+    ///
+    /// `nil` 与 `0` 必须分开用：`nil` 是「还不知道」，`0` 才是「这台机器确实没有」。
+    /// UI 拿它区分「本来就读不到」和「这一刻还没读到」（见 `SensorAvailability`）。
+    public func sensorCount(for category: SensorCategory) -> Int? {
+        guard let catalogDescriptors else { return nil }
+        return catalogDescriptors.reduce(0) { $0 + ($1.category == category ? 1 : 0) }
     }
 
     /// 读取一轮温度。首次调用会枚举键表；之后复用缓存。
@@ -79,11 +96,11 @@ public final class SMCTemperatureProvider {
         let discovered = SensorCatalog.descriptors(
             forKeys: SensorCatalog.temperatureKeys(fromAllKeys: keys)
         )
-        .filter { includedCategories.contains($0.category) }
 
         // 空结果也缓存，避免对「本机确实无温度键」的机型反复枚举；
         // 真正需要重试的场景（枚举抛错）已在上面返回 nil。
-        descriptors = discovered
-        return discovered
+        catalogDescriptors = discovered
+        descriptors = discovered.filter { includedCategories.contains($0.category) }
+        return descriptors
     }
 }

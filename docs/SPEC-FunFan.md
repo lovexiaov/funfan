@@ -152,6 +152,10 @@ FunFan/
   3. **兜底**：SMC 全 `T*` 枚举扫描（命名可信度低，仅兜底）。
   - 分类映射：`Tp*`/`Tf*`/`Te*`→CPU（细分 E/P/Super 簇）、`Tg*`→GPU、`Tm*`→Memory、`TB*`→Battery、`TA*`→环境；未匹配归 `other`。
   - **合理性过滤**：丢弃 (4,132)℃ 之外的值；睡眠切换偶发 `kIOReturnTimeout` 时 50 ms 后重试一次。
+  - **类别可用性三态**：`TA*`（环境）等类别并非每台机器都有——Mac mini M4 实测 180 个温度键里 `TA*` 一个都没有。所以「本帧无读数」**不能**等同于「这台机器没有该传感器」（读失败、越界过滤、唤醒瞬间都会让当帧缺席）。两层分工：
+    - `SMCTemperatureProvider.sensorCount(for:)` 回答「键表里有没有」，返回 `nil` = 尚未枚举（未知），`0` = 确实没有；
+    - `SensorSnapshot.availability(for:sensorCount:)` 合成三态 `available(值) / pending / unsupported`。
+    - UI 只对 `unsupported` 显示「无传感器」（+ tooltip 说明），`pending` 仍显示 `—`，避免误报闪烁。
   - 注意：`powermetrics`/`IOReport` 在 AS 上取不到具体摄氏度，温度**以 SMC 为准**。
 - `SensorStore`：轮询 SMC 取各传感器实时值，维护「最新值 + 滑动均值（窗口可配，默认 30 s）」，供 UI 展示与规则评估；读操作无需 root。
 - **UI 展示粒度**：CPU 与 GPU 同时提供 **均温**（四宫格主数值）与 **按簇明细**（CPU 细化 P 性能核 / E 能效核 / M5 Super 簇，GPU 单独一组），明细默认折叠、按需展开（见 UI 指南 `CoreTempBreakdown`）。展开面板顶部另有**芯片真实拓扑卡**（芯片名 + 性能核/能效核/GPU 核数），核心数来自系统接口而非温度键。

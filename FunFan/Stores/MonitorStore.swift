@@ -15,6 +15,9 @@ final class MonitorStore: ObservableObject {
     @Published private(set) var gpuAverage: Double?
     @Published private(set) var ssdAverage: Double?
     @Published private(set) var ambientAverage: Double?
+    /// 环境温度在这台机器上到底有没有——`ambientAverage == nil` 不足以区分
+    /// 「没有这个传感器」和「这一刻没采到」，UI 需要这个三态才能不说谎。
+    @Published private(set) var ambientAvailability: SensorAvailability = .pending
     /// 全部传感器中的最高温——曲线/规则用的「芯片温度」就是它（与 `RuleEngine` 一致）。
     @Published private(set) var hottestCelsius: Double?
     @Published private(set) var coreGroups: [CoreGroup] = []
@@ -37,6 +40,9 @@ final class MonitorStore: ObservableObject {
     private var timer: DispatchSourceTimer?
     private var smc: SMCService?
     private var monitor: SensorMonitor?
+    /// 保留一份 provider 引用：只有它知道「这台机器的键表里有没有某类传感器」，
+    /// 而单帧读数答不了这个问题（读失败、越界过滤都会让当帧缺席）。
+    private var temperatureProvider: SMCTemperatureProvider?
     private var batteryStore: BatteryStore?
 
     /// 当前可见性决定采样频率（0.5 / 2 / 5 s）。
@@ -71,6 +77,7 @@ final class MonitorStore: ObservableObject {
             self.smc?.close()
             self.smc = nil
             self.monitor = nil
+            self.temperatureProvider = nil
             self.openIfNeeded()
         }
     }
@@ -95,6 +102,7 @@ final class MonitorStore: ObservableObject {
         smc = service
 
         let provider = SMCTemperatureProvider(service: service)
+        temperatureProvider = provider
         monitor = SensorMonitor(windowCapacity: 60, provider: { provider.readings() })
         batteryStore = BatteryStore()
 
@@ -145,6 +153,10 @@ final class MonitorStore: ObservableObject {
         let gpu = snapshot.averageGPU()
         let ssd = snapshot.average(for: .ssd)
         let ambient = snapshot.average(for: .ambient)
+        let ambientAvailability = snapshot.availability(
+            for: .ambient,
+            sensorCount: temperatureProvider?.sensorCount(for: .ambient)
+        )
         let hottest = snapshot.readings.map(\.celsius).max()
         let count = snapshot.readings.count
 
@@ -159,6 +171,7 @@ final class MonitorStore: ObservableObject {
             self.gpuAverage = gpu
             self.ssdAverage = ssd
             self.ambientAverage = ambient
+            self.ambientAvailability = ambientAvailability
             self.hottestCelsius = hottest
             self.coreGroups = groups
             self.battery = battery
