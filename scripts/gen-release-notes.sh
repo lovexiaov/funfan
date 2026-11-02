@@ -57,9 +57,31 @@ fi
 CHANGES_TMP="$(mktemp -t funfan-changes)"
 trap 'rm -f "$CHANGES_TMP"' EXIT
 
+# 变更段优先用 docs/CHANGELOG.md 里「## FunFan <版本>」这一节（人工维护、面向用户），
+# 没有对应条目（或该版本还没写）时回退到 git 提交记录，保证任何版本都能出 notes。
+# 安装 / 校验 / 系统要求等固定文案仍是脚本单源生成，不在这里重复。
+CHANGELOG="docs/CHANGELOG.md"
+if [ -f "$CHANGELOG" ]; then
+  awk -v v="$VERSION" '
+    /^## FunFan / {
+      if (found) exit            # 已经过了目标版本，遇到下一个版本标题就停
+      rest = $0
+      sub(/^## FunFan /, "", rest)
+      sub(/\(.*\)/, "", rest)    # 去掉末尾的 (日期)
+      gsub(/^[ \t]+|[ \t]+$/, "", rest)
+      if (rest == v) { found = 1; next }
+      next
+    }
+    found { print }
+  ' "$CHANGELOG" > "$CHANGES_TMP"
+fi
+
+# 没提取到内容（CHANGELOG 缺失 / 该版本未写 / 提取失败）就退回 git log。
 # 直接落文件，不经 heredoc/printf —— 提交标题里有反引号（键名、命令），
 # 任何一句被 shell 当成命令替换都会静默改掉 release notes。
-git log --pretty=format:'- %s' --no-merges "$RANGE" > "$CHANGES_TMP"
+if [ ! -s "$CHANGES_TMP" ]; then
+  git log --pretty=format:'- %s' --no-merges "$RANGE" > "$CHANGES_TMP"
+fi
 
 # 一次算好正文，再决定输出到文件还是 stdout
 emit() {
