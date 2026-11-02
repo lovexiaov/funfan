@@ -69,14 +69,18 @@ struct MenuBarView: View {
                 .foregroundStyle(palette.textPrimary)
             Spacer()
             if let date = monitor.lastSample {
-                Text(date, style: .relative)
-                    .font(Theme.Typo.meta)
-                    .foregroundStyle(palette.textTertiary)
-                    // 只有数字 +「秒」、没有「前」字，第一眼极易被读成某个设置值
-                    // （用户实测反馈：「设置按钮旁边那个 x 秒是干啥用的」）。
-                    // 悬停补一句确切含义 + 当前刷新频率。
-                    .help(freshnessHelp(since: date))
-                    .accessibilityLabel(freshnessHelp(since: date))
+                // `.relative` 渲染的是**时长**（「2 秒」「3 分钟」），不带「前」字，
+                // 光看像个设置值（用户实测反馈）。补一个「前」就成「2 秒前」，
+                // 仍然由系统每秒自更新，不额外引计时器（面板打开时不加 CPU）。
+                HStack(spacing: 1) {
+                    Text(date, style: .relative)
+                    Text("前")
+                }
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textTertiary)
+                // 悬停补两句：刷新频率 + 「涨太多 = 采样停了」，陈数据别当实时看。
+                .help(freshnessHelp(since: date))
+                .accessibilityLabel(freshnessHelp(since: date))
             }
             Button(action: onOpenSettings) {
                 Image(systemName: "gearshape")
