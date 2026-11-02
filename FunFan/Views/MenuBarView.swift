@@ -586,6 +586,13 @@ struct MenuBarView: View {
                 ) {
                     installer.install()
                 }
+                if installer.needsBootRepair {
+                    // 重启没自启：除了「重新启用」再装载一次，也给一个「把证据交回来」的入口，
+                    // 点一下在 Finder 里选中刚自动生成的取证报告（issue #1）。
+                    FunFanButton(title: "诊断报告", systemImage: "doc.text.magnifyingglass") {
+                        diagnostics.shareBootRepairReport(bootTime: SystemProbe().systemBootTime())
+                    }
+                }
                 FunFanButton(title: "设置…", systemImage: "gearshape") {
                     onOpenSettings()
                 }

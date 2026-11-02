@@ -280,10 +280,24 @@ struct SettingsView: View {
                 SettingRow(
                     title: "完整诊断报告",
                     subtitle: "复制机型、系统、SMC 能力逐项实测与日志尾部到剪贴板，可直接贴进 issue",
-                    isLast: true
+                    isLast: !installer.needsBootRepair
                 ) {
                     FunFanButton(title: "复制", systemImage: "doc.on.clipboard") {
                         diagnostics.copyReport()
+                    }
+                }
+
+                if installer.needsBootRepair {
+                    // 重启后没自启（issue #1）：除「一键安装」再装载一次，也给一个
+                    // 把证据交回来的入口——在 Finder 里选中刚自动生成的取证报告。
+                    SettingRow(
+                        title: "重启未自启取证报告",
+                        subtitle: "后台组件已装但 launchd 未加载；点此在 Finder 打开自动生成的诊断报告（issue #1）",
+                        isLast: true
+                    ) {
+                        FunFanButton(title: "打开报告", systemImage: "doc.text.magnifyingglass") {
+                            diagnostics.shareBootRepairReport(bootTime: SystemProbe().systemBootTime())
+                        }
                     }
                 }
             }
