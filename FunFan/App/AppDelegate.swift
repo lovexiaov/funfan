@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let diagnostics = DiagnosticsStore()
     private let settings = SettingsStore()
     private let helperInstaller = HelperInstaller()
+    /// Popover 的跨重开 UI 状态（展开态等）。必须是稳定实例：面板关闭时 rootView
+    /// 会被换成空白占位再换回，视图会重建，状态靠它存活（见 PopoverUIState）。
+    private let popoverUI = PopoverUIState()
 
     private var rulesWindow: NSWindow?
     private var curveWindow: NSWindow?
@@ -310,6 +313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 control: control,
                 diagnostics: diagnostics,
                 installer: helperInstaller,
+                ui: popoverUI,
                 onOpenRules: { [weak self] in self?.showRulesWindow() },
                 onOpenCurve: { [weak self] in self?.showCurveWindow() },
                 onOpenSettings: { [weak self] in self?.showSettingsWindow() },

@@ -130,6 +130,7 @@ enum RenderCheck {
                 MenuBarView(
                     monitor: monitor, control: control, diagnostics: DiagnosticsStore(),
                     installer: HelperInstaller(),
+                    ui: PopoverUIState(),
                     onOpenRules: {}, onOpenCurve: {}, onOpenSettings: {}, onQuit: {}
                 )
                     .background(Palette.resolve(schemeValue()).panelFill)
@@ -141,7 +142,7 @@ enum RenderCheck {
                 MenuBarView(
                     monitor: monitor, control: control, diagnostics: DiagnosticsStore(),
                     installer: HelperInstaller(),
-                    initialShowCores: true,
+                    ui: PopoverUIState(showCores: true),
                     onOpenRules: {}, onOpenCurve: {}, onOpenSettings: {}, onQuit: {}
                 )
                     .background(Palette.resolve(schemeValue()).panelFill)

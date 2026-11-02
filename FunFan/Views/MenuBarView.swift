@@ -8,24 +8,22 @@ struct MenuBarView: View {
     @ObservedObject var control: ControlStore
     @ObservedObject var diagnostics: DiagnosticsStore
     @ObservedObject var installer: HelperInstaller
+    /// 跨「关闭→重开」保留的 UI 状态（展开态等）。见 `PopoverUIState`。
+    @ObservedObject var ui: PopoverUIState
     var onOpenRules: () -> Void
     var onOpenCurve: () -> Void
     var onOpenSettings: () -> Void
     var onQuit: () -> Void
 
-    @State private var showCores: Bool
-
     @Environment(\.palette) private var palette
     @Environment(\.renderFlattensScroll) private var flattenScroll
 
-    /// `initialShowCores` 只给离屏渲染走查用（`--render popover-cores`），
-    /// 正常运行时展开状态由用户点击决定。
     init(
         monitor: MonitorStore,
         control: ControlStore,
         diagnostics: DiagnosticsStore,
         installer: HelperInstaller,
-        initialShowCores: Bool = false,
+        ui: PopoverUIState,
         onOpenRules: @escaping () -> Void,
         onOpenCurve: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
@@ -35,11 +33,11 @@ struct MenuBarView: View {
         self.control = control
         self.diagnostics = diagnostics
         self.installer = installer
+        self.ui = ui
         self.onOpenRules = onOpenRules
         self.onOpenCurve = onOpenCurve
         self.onOpenSettings = onOpenSettings
         self.onQuit = onQuit
-        _showCores = State(initialValue: initialShowCores)
     }
 
     var body: some View {
@@ -206,7 +204,7 @@ struct MenuBarView: View {
 
             if !monitor.coreGroups.isEmpty {
                 coreDisclosure
-                if showCores {
+                if ui.showCores {
                     expandedThermalDetail
                 }
             }
@@ -222,14 +220,14 @@ struct MenuBarView: View {
     private var coreDisclosure: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.15)) {
-                showCores.toggle()
+                ui.showCores.toggle()
             }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
-                    .rotationEffect(.degrees(showCores ? 90 : 0))
-                Text(showCores ? "收起各核心温度" : "展开各核心温度")
+                    .rotationEffect(.degrees(ui.showCores ? 90 : 0))
+                Text(ui.showCores ? "收起各核心温度" : "展开各核心温度")
                     .font(Theme.Typo.meta)
                 Spacer(minLength: 0)
             }
@@ -238,8 +236,8 @@ struct MenuBarView: View {
         }
         .buttonStyle(.plain)
         .funfanFocusRing(cornerRadius: 6, outset: 2)
-        .accessibilityLabel(showCores ? "收起核心温度" : "展开核心温度")
-        .help(showCores ? "收起核心布局与温度探测点" : "展开核心布局与各簇温度探测点")
+        .accessibilityLabel(ui.showCores ? "收起核心温度" : "展开核心温度")
+        .help(ui.showCores ? "收起核心布局与温度探测点" : "展开核心布局与各簇温度探测点")
     }
 
     /// 温度格。
