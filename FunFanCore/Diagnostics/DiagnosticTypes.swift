@@ -84,6 +84,14 @@ public struct HelperDiagnosis: Codable, Equatable {
         self.logTail = logTail
     }
 
+    /// 重启后自启失效的修复态：文件都在、launchd 却没加载。
+    ///
+    /// 这是 issue #1 的场景——用户看到的应该是一条明确的「没随系统启动，点一下修复」，
+    /// 而不是被当成「从未安装」重新走一遍安装引导。
+    public var needsBootRepair: Bool {
+        binaryInstalled && plistInstalled && launchdLoaded == false
+    }
+
     public var summary: String {
         switch (binaryInstalled, plistInstalled) {
         case (true, true):

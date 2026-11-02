@@ -91,7 +91,8 @@ public struct SystemProbe: DiagnosticsProbing {
     ///
     /// 普通用户就能读 system 域（真机验证过），不需要 root。
     /// spawn 失败返回 nil——分不清「没加载」和「没探成」时不要编造结论。
-    static func launchdLoaded(label: String) -> Bool? {
+    /// HelperInstaller 的重启修复判定与诊断报告共用这一份事实来源。
+    public static func launchdLoaded(label: String) -> Bool? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         process.arguments = ["print", "system/\(label)"]

@@ -216,6 +216,9 @@ struct SettingsView: View {
     }
 
     private var helperSubtitle: String {
+        if installer.needsBootRepair {
+            return "已安装，但 launchd 未加载——重启后不会自启。点「一键安装」再装载一次即可修复（会再弹一次密码）"
+        }
         if installer.status.isInstalled {
             return "已由系统登记并在运行，升级 App 无需重新授权"
         }

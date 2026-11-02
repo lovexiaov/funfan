@@ -564,21 +564,23 @@ struct MenuBarView: View {
                     .foregroundStyle(palette.attention)
                 // 这是**阻断性**说明（没装组件就完全控制不了风扇），
                 // 原来用 11pt 比正文 12pt 还小，属于「越重要越小」。
-                Text("只能监控，还不能控制风扇")
+                Text(installer.needsBootRepair ? "后台组件没有随系统启动" : "只能监控，还不能控制风扇")
                     .font(Theme.Typo.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 0)
             }
 
             Text(installer.note
-                 ?? "控制风扇需要安装一个后台组件（只装一次）。它只做一件事：代表 FunFan 写转速，FunFan 退出就立刻交还系统。")
+                 ?? (installer.needsBootRepair
+                     ? "组件文件还在，但 launchd 没有加载它（重启后偶发，issue 追踪中）。点「重新启用」再装载一次即可修复，配置不会丢。"
+                     : "控制风扇需要安装一个后台组件（只装一次）。它只做一件事：代表 FunFan 写转速，FunFan 退出就立刻交还系统。"))
                 .font(Theme.Typo.meta)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 6) {
                 FunFanButton(
-                    title: installer.isBusy ? "安装中…" : "一键启用",
+                    title: installer.isBusy ? "安装中…" : (installer.needsBootRepair ? "重新启用" : "一键启用"),
                     systemImage: "lock.shield",
                     isEnabled: !installer.isBusy && HelperInstaller.canInstallAnyhow
                 ) {

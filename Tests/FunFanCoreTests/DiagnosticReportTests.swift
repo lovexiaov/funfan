@@ -244,6 +244,16 @@ final class DiagnosticReportTests: XCTestCase {
         XCTAssertEqual(helper.summary, "已安装（二进制 + LaunchDaemon）")
     }
 
+    /// needsBootRepair 只在「文件齐 + 确认没加载」时为真；
+    /// 未探测（nil）不能算——那是不知道，不是坏了。
+    func testNeedsBootRepairRequiresConfirmedNotLoaded() {
+        XCTAssertTrue(HelperDiagnosis(binaryInstalled: true, plistInstalled: true, launchdLoaded: false).needsBootRepair)
+        XCTAssertFalse(HelperDiagnosis(binaryInstalled: true, plistInstalled: true, launchdLoaded: true).needsBootRepair)
+        XCTAssertFalse(HelperDiagnosis(binaryInstalled: true, plistInstalled: true, launchdLoaded: nil).needsBootRepair)
+        XCTAssertFalse(HelperDiagnosis(binaryInstalled: true, plistInstalled: false, launchdLoaded: false).needsBootRepair)
+        XCTAssertFalse(HelperDiagnosis(binaryInstalled: false, plistInstalled: true, launchdLoaded: false).needsBootRepair)
+    }
+
     // MARK: - 渲染
 
     func testMarkdownHasSectionsAndPutsFailuresFirst() {

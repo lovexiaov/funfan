@@ -32,6 +32,9 @@ final class HelperInstaller: ObservableObject {
     @Published private(set) var completionTick = 0
     /// 直装那份（`/Library/PrivilegedHelperTools`）当前是否存在。
     @Published private(set) var directInstallPresent = HelperInstaller.directInstallDetected()
+    /// 重启后自启失效：文件都在，但 launchd 没加载（issue #1 / #2 的交叉场景）。
+    /// 此时 UI 要给「重新启用一次即可修复」的明确指引，而不是当从未安装。
+    @Published private(set) var needsBootRepair = false
 
     private var service: SMAppService?
 
@@ -39,6 +42,7 @@ final class HelperInstaller: ObservableObject {
         service = Self.makeService()
         status = Self.currentStatus()
         directInstallPresent = Self.directInstallDetected()
+        needsBootRepair = Self.bootRepairNeeded()
     }
 
     // MARK: - 环境
@@ -329,6 +333,14 @@ final class HelperInstaller: ObservableObject {
     func refresh() {
         status = Self.currentStatus()
         directInstallPresent = Self.directInstallDetected()
+        needsBootRepair = Self.bootRepairNeeded()
+    }
+
+    /// 直装文件在、launchd 没加载 = 重启后没自启（探测走 FunFanCore 的
+    /// `SystemProbe.launchdLoaded`，与诊断报告同一份事实来源）。
+    private static func bootRepairNeeded() -> Bool {
+        directInstallDetected()
+            && SystemProbe.launchdLoaded(label: HelperConstants.machServiceName) == false
     }
 
     private func finish(success: Bool) {
