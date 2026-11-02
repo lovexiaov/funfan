@@ -20,6 +20,13 @@ do {
     let tempKeys = SensorCatalog.temperatureKeys(fromAllKeys: allKeys)
     print("[SMC] 温度键 \(tempKeys.count) 个")
 
+    // --tier：两层采样 A/B 对比（M14 真机验收）——旧行为 vs 生产参数，
+    // 同进程交替采样，对比耗时/IPC/数据偏差。跑完即退出。
+    if CommandLine.arguments.contains("--tier") {
+        runTierComparison(smc: smc)
+        exit(0)   // 对比模式到此为止，不走后面的风扇/控制/电量流程
+    }
+
     // --keys：打印全部温度键与读数（诊断用，后续可作为 doctor 子命令）
     if CommandLine.arguments.contains("--keys") {
         for key in tempKeys {
@@ -135,3 +142,85 @@ let cycles = state.cycleCount.map(String.init) ?? "n/a"
 let watts = state.powerWatts.map { String(format: "%.2f", $0) } ?? "n/a"
 let temp = state.temperatureCelsius.map { String(format: "%.1f", $0) } ?? "n/a"
 print("[Battery] present=\(state.present) pct=\(pct)% health=\(health)% cycles=\(cycles) power=\(watts)W temp=\(temp)°C charging=\(state.isCharging) external=\(state.externalConnected)")
+
+// MARK: - 两层采样 A/B 对比（M14 真机验收）
+
+/// 同进程里跑「旧模式（每帧全量）」与「生产两层采样」各 N 帧，交替进行，
+/// 对比三项：耗时/IPC（省了多少）、各类均温偏差（显示准不准）、
+/// hottest 偏差（控制准不准）、单键最大偏差（兜底）。
+/// A/B 逐帧紧挨着读，期间温度漂移最小，偏差可近似视为纯方法差异。
+private func runTierComparison(smc: SMCService) {
+    let frames = 20
+    let legacy = SMCTemperatureProvider(service: smc)                                   // 旧行为：fullScanEvery = 1
+    let tiered = SMCTemperatureProvider(service: smc, fullScanEvery: 10, perCategoryHotKeys: 4) // 生产参数
+
+    _ = legacy.readings()   // 各自预热（键表枚举）
+    _ = tiered.readings()
+
+    var legacyMs: [Double] = [], tieredMs: [Double] = []
+    var legacyIPC = 0, tieredIPC = 0
+    var maxAvgDelta = 0.0, maxHottestDelta = 0.0, maxKeyDelta = 0.0
+    var maxAvgCategory = "", shapeMismatchFrames = 0
+
+    for _ in 0..<frames {
+        // A：全量
+        var before = smc.ipcCallCount
+        var t0 = DispatchTime.now()
+        let a = legacy.readings()
+        legacyMs.append(Double(DispatchTime.now().uptimeNanoseconds - t0.uptimeNanoseconds) / 1e6)
+        legacyIPC += smc.ipcCallCount - before
+        let snapA = SensorSnapshot(readings: a, timestamp: Date())
+
+        // B：两层采样（紧挨着读）
+        before = smc.ipcCallCount
+        t0 = DispatchTime.now()
+        let b = tiered.readings()
+        tieredMs.append(Double(DispatchTime.now().uptimeNanoseconds - t0.uptimeNanoseconds) / 1e6)
+        tieredIPC += smc.ipcCallCount - before
+        let snapB = SensorSnapshot(readings: b, timestamp: Date())
+
+        // 形状必须一致（M14 的核心承诺：消费方零改动）
+        if Set(a.map(\.descriptor.key)) != Set(b.map(\.descriptor.key)) {
+            shapeMismatchFrames += 1
+        }
+
+        // hottest（控制引擎同款算法）
+        let hotA = a.map(\.celsius).max() ?? 0
+        let hotB = b.map(\.celsius).max() ?? 0
+        maxHottestDelta = max(maxHottestDelta, abs(hotA - hotB))
+
+        // 各类均温（显示用）
+        for category in SensorCategory.allCases {
+            guard let avgA = snapA.average(for: category),
+                  let avgB = snapB.average(for: category) else { continue }
+            let delta = abs(avgA - avgB)
+            if delta > maxAvgDelta {
+                maxAvgDelta = delta
+                maxAvgCategory = category.rawValue
+            }
+        }
+
+        // 单键最大偏差（兜底视角）
+        var byKey: [String: Double] = [:]
+        for r in b { byKey[r.descriptor.key] = r.celsius }
+        for r in a {
+            if let v = byKey[r.descriptor.key] {
+                maxKeyDelta = max(maxKeyDelta, abs(r.celsius - v))
+            }
+        }
+    }
+
+    func stats(_ xs: [Double]) -> (avg: Double, max: Double) {
+        (xs.reduce(0, +) / Double(xs.count), xs.max() ?? 0)
+    }
+    let la = stats(legacyMs), ta = stats(tieredMs)
+
+    print("[Tier] A/B 各 \(frames) 帧（B：每 10 帧全量 + 每类最热 4 键快帧）")
+    print(String(format: "[Tier] 耗时：全量帧 均值 %.1f ms / 最大 %.1f ms；两层帧 均值 %.1f ms / 最大 %.1f ms（均值 -%.0f%%）",
+                 la.avg, la.max, ta.avg, ta.max, (1 - ta.avg / la.avg) * 100))
+    print(String(format: "[Tier] IPC：全量 %d 次，两层 %d 次（-%.0f%%）",
+                 legacyIPC, tieredIPC, (1 - Double(tieredIPC) / Double(legacyIPC)) * 100))
+    print(String(format: "[Tier] 数据对比：均温最大偏差 %.3f℃（%@）｜hottest 最大偏差 %.3f℃｜单键最大偏差 %.3f℃",
+                 maxAvgDelta, maxAvgCategory as NSString, maxHottestDelta, maxKeyDelta))
+    print("[Tier] 形状：\(shapeMismatchFrames == 0 ? "全部 \(frames) 帧键集合一致 ✓" : "\(shapeMismatchFrames) 帧键集合不一致 ✗")")
+}

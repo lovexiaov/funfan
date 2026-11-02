@@ -173,4 +173,156 @@ final class SMCTemperatureProviderTests: XCTestCase {
         _ = provider.readings()
         XCTAssertEqual(provider.sensorCount(for: .ambient), 1)
     }
+
+    // MARK: - 两层采样（M14：快帧只读热键白名单，其余键复用上轮全扫缓存）
+
+    /// 键位安排：4 个 CPU 探测点 + 1 个 GPU 探测点（前缀决定类别）。
+    private let tierKeys = ["Tp01", "Tp02", "Tp03", "Tp04", "Tg0G"]
+
+    /// `fullScanEvery: 1`（默认）必须保持旧行为：每个键每帧都真读。
+    func testLegacyModeReadsEveryKeyEveryFrame() {
+        var readCounts: [String: Int] = [:]
+        let provider = SMCTemperatureProvider(
+            keyLister: { self.tierKeys },
+            reader: { key in readCounts[key, default: 0] += 1; return 50 },
+            fullScanEvery: 1
+        )
+
+        for _ in 0..<3 { _ = provider.readings() }
+
+        XCTAssertEqual(readCounts["Tp01"], 3)
+        XCTAssertEqual(readCounts["Tg0G"], 3)
+    }
+
+    /// 第 1 帧恒为全量扫描：白名单和缓存都从这里建立。
+    func testFirstFrameIsAlwaysFullScan() {
+        var readCounts: [String: Int] = [:]
+        let provider = SMCTemperatureProvider(
+            keyLister: { self.tierKeys },
+            reader: { key in readCounts[key, default: 0] += 1; return 50 },
+            fullScanEvery: 10
+        )
+
+        let readings = provider.readings()
+
+        XCTAssertEqual(readings.count, 5)
+        XCTAssertEqual(readCounts["Tp04"], 1, "首帧必须全量")
+    }
+
+    /// 快帧只真读白名单键（每类最热 K 个 + 键数 ≤ K 的整类），其余键复用缓存，
+    /// 输出形状与全量一致——消费方（均温 / hottest / 明细列表）零改动。
+    func testFastFrameReadsOnlyHotKeysAndMergesCache() {
+        var table: [String: Double] = ["Tp01": 60, "Tp02": 70, "Tp03": 65, "Tp04": 55, "Tg0G": 48]
+        var readCounts: [String: Int] = [:]
+        let provider = SMCTemperatureProvider(
+            keyLister: { self.tierKeys },
+            reader: { key in
+                readCounts[key, default: 0] += 1
+                return table[key] ?? 0
+            },
+            fullScanEvery: 10,
+            perCategoryHotKeys: 2
+        )
+
+        _ = provider.readings()                       // 帧 1：全量
+        table["Tp02"] = 72                            // 白名单键本轮有新值
+        let fast = provider.readings()                // 帧 2：快帧
+
+        // 只真读：CPU 最热 2 个（Tp02 70、Tp03 65）+ GPU 整类（Tg0G，1 ≤ 2）
+        XCTAssertEqual(readCounts["Tp02"], 2)
+        XCTAssertEqual(readCounts["Tp03"], 2)
+        XCTAssertEqual(readCounts["Tg0G"], 2)
+        XCTAssertEqual(readCounts["Tp01"], 1, "冷键不在白名单，快帧不读")
+        XCTAssertEqual(readCounts["Tp04"], 1)
+
+        // 输出形状不变：5 个键全在，白名单键是新值，其余是缓存值
+        XCTAssertEqual(fast.count, 5)
+        let byKey = Dictionary(uniqueKeysWithValues: fast.map { ($0.descriptor.key, $0.celsius) })
+        XCTAssertEqual(byKey["Tp02"], 72, "白名单键必须拿到新读数")
+        XCTAssertEqual(byKey["Tp01"], 60, "非白名单键复用上轮全扫缓存")
+        XCTAssertEqual(byKey["Tp04"], 55)
+    }
+
+    /// 周期性全量扫描刷新缓存与白名单：fullScanEvery = 3 → 帧 1/4/7… 全量。
+    /// K=2：CPU 最热 2 个进白名单，Tp04/Tp01 之外的两个冷键快帧不读。
+    func testPeriodicFullScanRefreshesCacheAndWhitelist() {
+        var readCounts: [String: Int] = [:]
+        let provider = SMCTemperatureProvider(
+            keyLister: { self.tierKeys },
+            reader: { key in readCounts[key, default: 0] += 1; return 50 },
+            fullScanEvery: 3,
+            perCategoryHotKeys: 2
+        )
+
+        for _ in 0..<4 { _ = provider.readings() }    // 帧 1 全量，2/3 快帧，4 全量
+
+        XCTAssertEqual(readCounts["Tp04"], 2, "冷键只在帧 1 与帧 4（全量帧）各读一次")
+        XCTAssertEqual(readCounts["Tp01"], 4, "白名单键每帧都读")
+    }
+
+    /// 热点漂移后白名单必须跟上：全量扫描时重新评选每类最热键。
+    func testWhitelistFollowsNewHotspots() {
+        var table: [String: Double] = ["Tp01": 60, "Tp02": 55, "Tg0G": 48]
+        var readCounts: [String: Int] = [:]
+        let provider = SMCTemperatureProvider(
+            keyLister: { ["Tp01", "Tp02", "Tg0G"] },
+            reader: { key in
+                readCounts[key, default: 0] += 1
+                return table[key] ?? 0
+            },
+            fullScanEvery: 3,
+            perCategoryHotKeys: 1
+        )
+
+        _ = provider.readings()                       // 帧 1 全量：白名单 = {Tp01, Tg0G}
+        _ = provider.readings()                       // 帧 2 快帧
+        table["Tp02"] = 99                            // 冷键升温（在帧 1–3 之间发生）
+        _ = provider.readings()                       // 帧 3 快帧：仍读 Tp01
+        _ = provider.readings()                       // 帧 4 全量：发现新热点
+
+        table["Tp01"] = 60                            // Tp01 已降温
+        _ = provider.readings()                       // 帧 5 快帧：应改读 Tp02
+
+        XCTAssertGreaterThanOrEqual(readCounts["Tp02"] ?? 0, 3, "帧 4 全量 + 帧 5 快帧都要读新热点")
+        XCTAssertEqual(readCounts["Tp01"], 4, "帧 1/4 全量 + 帧 2/3 快帧；帧 5 起让位给新热点")
+    }
+
+    /// 缓存值不许凭空消失：快帧里缓存键仍在输出里参与 hottest / 均温，
+    /// hottest 不会因为白名单键降温而误降（保守不回退）。
+    func testMergedFastFrameKeepsCachedHottest() {
+        var table: [String: Double] = ["Tp01": 90, "Tp02": 80, "Tg0G": 48]
+        let provider = SMCTemperatureProvider(
+            keyLister: { ["Tp01", "Tp02", "Tg0G"] },
+            reader: { table[$0] ?? 0 },
+            fullScanEvery: 10,
+            perCategoryHotKeys: 1
+        )
+
+        _ = provider.readings()                       // 帧 1 全量：白名单 = {Tp01, Tg0G}
+        table["Tp01"] = 50                            // 热点键骤冷
+        let fast = provider.readings()                // 帧 2 快帧
+
+        XCTAssertEqual(fast.count, 3, "缓存键不能丢")
+        // 控制引擎取「快照内最高温度」的方式就是 readings.map(\.celsius).max()
+        // （RuleEngine.swift dieCelsius 同款）——缓存值必须参与其中兜底
+        XCTAssertEqual(fast.map(\.celsius).max(), 80, "hottest = max(白名单新值 50, 缓存 80)——缓存保守兜底")
+    }
+
+    /// `invalidateKeyCache()` 后必须回到全量扫描：键表都变了，旧缓存不可信。
+    func testInvalidateKeyCacheForcesFullScan() {
+        var readCounts: [String: Int] = [:]
+        let provider = SMCTemperatureProvider(
+            keyLister: { self.tierKeys },
+            reader: { key in readCounts[key, default: 0] += 1; return 50 },
+            fullScanEvery: 10,
+            perCategoryHotKeys: 2
+        )
+
+        _ = provider.readings()                       // 帧 1 全量
+        _ = provider.readings()                       // 帧 2 快帧（冷键不读）
+        provider.invalidateKeyCache()
+        _ = provider.readings()                       // 重建后必须全量
+
+        XCTAssertEqual(readCounts["Tp04"], 2, "帧 1 全量 + 失效重建后的第一帧全量；中间快帧不读冷键")
+    }
 }

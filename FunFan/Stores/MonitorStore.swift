@@ -101,7 +101,10 @@ final class MonitorStore: ObservableObject {
         }
         smc = service
 
-        let provider = SMCTemperatureProvider(service: service)
+        // 两层采样（M14）：每 10 帧一次全量扫描，快帧只读每类最热 4 个键，
+        // 其余键复用缓存——输出形状与全量一致，消费方零改动。
+        // 全量帧间隔：面板打开 2 s × 10 = 20 s；自动化 1 s × 10 = 10 s。
+        let provider = SMCTemperatureProvider(service: service, fullScanEvery: 10, perCategoryHotKeys: 4)
         temperatureProvider = provider
         monitor = SensorMonitor(windowCapacity: 60, provider: { provider.readings() })
         batteryStore = BatteryStore()
