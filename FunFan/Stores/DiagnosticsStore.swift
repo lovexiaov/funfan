@@ -15,7 +15,16 @@ final class DiagnosticsStore: ObservableObject {
     /// 给 UI 的一行反馈（复制成功 / 已保存到哪）。
     @Published private(set) var lastMessage: String?
 
+    /// 重启后自启失败报告的文件路径（生成后置位，供「查看报告」选中）。
+    @Published private(set) var bootRepairReportURL: URL?
+
+    /// 是否该弹「已生成取证报告」的提示（AppDelegate 订阅它弹窗，一次启动只弹一次）。
+    @Published private(set) var bootRepairPrompt: Bool = false
+
     private var capturedThisSession: Set<String> = []
+
+    /// 重启取证报告在本启动周期内是否已生成（去重，避免反复写盘/弹窗）。
+    private var bootRepairCaptured = false
 
     /// 能力出错时调用（helper 不可用、SMC 读取失败…）。
     func captureOnFailure(_ reason: String, context: [String: String] = [:]) {
@@ -67,6 +76,54 @@ final class DiagnosticsStore: ObservableObject {
                 pasteboard.setString(report.markdown, forType: .string)
                 self.lastMessage = url == nil ? "已复制诊断信息" : "已复制诊断信息，并保存到诊断目录"
             }
+        }
+    }
+
+    // MARK: - 重启后自启失败取证（issue #1）
+
+    /// 重启后后台组件没随系统启动：自动落一份取证报告，并置位提示。
+    ///
+    /// 一次启动只生成一次（去重）。报告里带上启动时间、距现在多少分钟，
+    /// 方便我们判断「是不是刚重启完」以及「重启后多久才被发现」。
+    func generateBootRepairReport(bootTime: Date?) {
+        guard !bootRepairCaptured else { return }
+        bootRepairCaptured = true
+        let capturedBoot = bootTime
+        DispatchQueue.global(qos: .utility).async {
+            var context: [String: String] = ["issue": "#1"]
+            if let boot = capturedBoot {
+                let iso = ISO8601DateFormatter()
+                context["bootTime"] = iso.string(from: boot)
+                context["minutesSinceBoot"] = String(format: "%.0f", Date().timeIntervalSince(boot) / 60)
+            }
+            let url = SystemInfoCollector.write(
+                reason: "重启后后台组件未自启（issue #1 取证）",
+                context: context
+            )
+            DispatchQueue.main.async {
+                self.bootRepairReportURL = url
+                self.bootRepairPrompt = true
+            }
+        }
+    }
+
+    /// 关掉「已生成取证报告」提示。
+    func dismissBootRepairPrompt() {
+        bootRepairPrompt = false
+    }
+
+    /// 用户主动要报告：已有就直接在 Finder 选中，没有就现生成再选中。
+    ///
+    /// 报告很小（毫秒级生成），首次生成后用半秒兜底再选中，避免选中一个还没写好的路径。
+    func shareBootRepairReport(bootTime: Date?) {
+        if let url = bootRepairReportURL {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            return
+        }
+        generateBootRepairReport(bootTime: bootTime)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let url = self?.bootRepairReportURL else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         }
     }
 }
