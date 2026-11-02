@@ -347,8 +347,16 @@ public enum SystemInfoCollector {
         let hint: String?
         switch (helper.binaryInstalled, helper.plistInstalled) {
         case (true, true):
-            helperStatus = .ok
-            hint = nil
+            if helper.launchdLoaded == false {
+                // issue #1 的关键场景：文件都在但 launchd 没加载——重启后必然不自启。
+                // 文件存在不代表能自启，所以不能照旧给 .ok。
+                helperStatus = .degraded
+                hint = "plist 在盘上但 launchd 没加载。排查：sudo launchctl print-disabled system | grep \(HelperPaths.machServiceName)；"
+                    + "临时修复：sudo launchctl bootstrap system \(HelperPaths.plist)"
+            } else {
+                helperStatus = .ok
+                hint = nil
+            }
         case (true, false):
             helperStatus = .failed
             hint = "缺 \(HelperPaths.plist)：重跑 sudo bash scripts/install-helper.sh"

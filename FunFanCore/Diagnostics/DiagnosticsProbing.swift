@@ -82,8 +82,28 @@ public struct SystemProbe: DiagnosticsProbing {
         return HelperDiagnosis(
             binaryInstalled: fileManager.fileExists(atPath: HelperPaths.binary),
             plistInstalled: fileManager.fileExists(atPath: HelperPaths.plist),
+            launchdLoaded: Self.launchdLoaded(label: HelperPaths.machServiceName),
             logTail: Self.tail(of: HelperPaths.log, lines: 8)
         )
+    }
+
+    /// launchd 是否加载了该服务：`launchctl print system/<label>` 退出码。
+    ///
+    /// 普通用户就能读 system 域（真机验证过），不需要 root。
+    /// spawn 失败返回 nil——分不清「没加载」和「没探成」时不要编造结论。
+    static func launchdLoaded(label: String) -> Bool? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = ["print", "system/\(label)"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
     }
 
     // MARK: - 内部

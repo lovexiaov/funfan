@@ -218,6 +218,32 @@ final class DiagnosticReportTests: XCTestCase {
         XCTAssertTrue(report.capabilities.first { $0.id == "helper" }?.hint?.contains("install-helper.sh") == true)
     }
 
+    // MARK: - helper 自启证据（issue #1：重启后 helper 没有自己拉起来）
+
+    /// 文件都在、launchd 也加载着：结论要明说「已加载」，自启链路完整。
+    func testHelperSummarySaysLaunchdLoaded() {
+        let helper = HelperDiagnosis(binaryInstalled: true, plistInstalled: true, launchdLoaded: true)
+        XCTAssertEqual(helper.summary, "已安装（二进制 + LaunchDaemon），launchd 已加载")
+    }
+
+    /// 文件都在但 launchd 没加载：重启后必然不自启——这正是 issue #1 缺的关键证据，
+    /// 报告必须把它标成降级并给出排查方向，而不是照旧显示「已安装」当正常。
+    func testHelperNotLoadedByLaunchdIsDegradedWithHint() {
+        let probe = FakeProbe(helper: HelperDiagnosis(binaryInstalled: true, plistInstalled: true, launchdLoaded: false))
+        let report = SystemInfoCollector.collect(reason: "重启后没自启", probe: probe, device: workingSMC())
+
+        XCTAssertEqual(status(report, "helper"), .degraded)
+        let capability = report.capabilities.first { $0.id == "helper" }
+        XCTAssertTrue(capability?.detail.contains("launchd 未加载") == true)
+        XCTAssertTrue(capability?.hint?.contains("disabled") == true)
+    }
+
+    /// 没探测到（无法 spawn launchctl / 旧数据）：退回原文案，不编造结论。
+    func testHelperSummaryWithoutLaunchdProbe() {
+        let helper = HelperDiagnosis(binaryInstalled: true, plistInstalled: true)
+        XCTAssertEqual(helper.summary, "已安装（二进制 + LaunchDaemon）")
+    }
+
     // MARK: - 渲染
 
     func testMarkdownHasSectionsAndPutsFailuresFirst() {

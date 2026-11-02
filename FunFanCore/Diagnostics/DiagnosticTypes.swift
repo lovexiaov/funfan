@@ -64,17 +64,32 @@ public struct Capability: Codable, Equatable {
 public struct HelperDiagnosis: Codable, Equatable {
     public var binaryInstalled: Bool
     public var plistInstalled: Bool
+    /// launchd 是否真的加载了这个服务（`launchctl print system/<label>` 退出码）。
+    ///
+    /// `nil` = 没探测（spawn 失败或旧数据）。这个字段是 issue #1 的教训：
+    /// 「文件都在」和「重启后会自启」是两回事，报告里缺了它就分不清
+    /// 「plist 压根没被 launchd 捡起来」和「加载了但进程没跑」。
+    public var launchdLoaded: Bool?
     public var logTail: [String]
 
-    public init(binaryInstalled: Bool = false, plistInstalled: Bool = false, logTail: [String] = []) {
+    public init(
+        binaryInstalled: Bool = false,
+        plistInstalled: Bool = false,
+        launchdLoaded: Bool? = nil,
+        logTail: [String] = []
+    ) {
         self.binaryInstalled = binaryInstalled
         self.plistInstalled = plistInstalled
+        self.launchdLoaded = launchdLoaded
         self.logTail = logTail
     }
 
     public var summary: String {
         switch (binaryInstalled, plistInstalled) {
-        case (true, true): return "已安装（二进制 + LaunchDaemon）"
+        case (true, true):
+            if launchdLoaded == true { return "已安装（二进制 + LaunchDaemon），launchd 已加载" }
+            if launchdLoaded == false { return "已安装但 launchd 未加载，重启后不会自启" }
+            return "已安装（二进制 + LaunchDaemon）"
         case (true, false): return "只装了二进制，缺 LaunchDaemon plist"
         case (false, true): return "有 plist 但缺二进制"
         case (false, false): return "未安装"
