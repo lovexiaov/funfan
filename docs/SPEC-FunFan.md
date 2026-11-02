@@ -109,7 +109,7 @@ FunFan/
 │   │   ├── CoreGroups.swift        # 按簇聚合温度组，列出真实 SMC 探测点（非核）
 │   │   ├── SensorMonitor.swift     # 滑动均值引擎（注入样本源，纯逻辑）
 │   │   ├── SMCTemperatureProvider.swift # 键表缓存 + 类别过滤 + 合理性过滤
-│   │   └── SamplingPolicy.swift    # 自适应采样频率（0.5 / 2 / 5 s）
+│   │   └── SamplingPolicy.swift    # 自适应采样频率（1 / 2 / 5 s）
 │   ├── Battery/
 │   │   ├── BatteryState.swift      # 状态模型 + 派生计算
 │   │   ├── BatteryStore.swift      # IOPS + AppleSmartBattery 双源合并
@@ -166,7 +166,7 @@ FunFan/
 - **采样范围与频率（性能约束，实测驱动）**：
   - 键信息（`dataSize`/`dataType`）开机内不变 → `SMCService` 缓存，读值只需 1 次 IPC（实测 IPC 1584 → 107 次/帧）。
   - 默认**不采样 `.other`** 类别（未识别传感器可达 52 个，占近三分之一成本且不展示）。
-  - 自适应频率 `SamplingPolicy`：Popover 打开 0.5 s、仅菜单栏 2 s、空闲 5 s。实测单帧 19.5 ms（M4 Pro / 107 传感器），对应 ≈3.9% / 1.0% / 0.4% 单核占用。
+  - 自适应频率 `SamplingPolicy`：Popover 打开 1 s（与规则/曲线引擎同频；曾用 0.5 s，温度是慢变量、UI 无感且比引擎还快，纯浪费）、仅菜单栏 2 s、空闲 5 s。实测单帧 19.5 ms（M4 Pro / 107 传感器），对应 ≈2.0% / 1.0% / 0.4% 单核占用。
 
 **规则数据模型（Codable，持久化至 `~/Library/Application Support/FunFan/rules.json`）**
 ```swift

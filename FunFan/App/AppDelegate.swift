@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             .sink { [weak self] limits in self?.curve.updateLimits(limits) }
             .store(in: &cancellables)
 
-        // 自动化策略需要更快的采样（1 s），其余情况沿用菜单栏档位
+        // 自动化策略用引擎档（1 s），其余情况沿用菜单栏档位
         control.$strategy
             .sink { [weak self] _ in self?.refreshVisibility() }
             .store(in: &cancellables)
@@ -540,7 +540,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         refreshVisibility()
     }
 
-    /// 采样频率：合盖 > 面板打开 > 自动化接管（规则/曲线）> 仅菜单栏。
+    /// 采样频率：合盖 > 自动化接管 = 面板打开（1 s）> 仅菜单栏（2 s）。
     private func refreshVisibility() {
         let visibility: SamplingPolicy.Visibility
         if lid.isClosed {
