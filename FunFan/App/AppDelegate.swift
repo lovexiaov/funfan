@@ -352,6 +352,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// 用按下时的状态就永远正确：该关就关（`closePopover` 幂等，关两次也只关一次），
     /// 该开就开，不受中间发生过什么影响。
     @objc private func togglePopover() {
+        // 图标点击的开关决策由这里做；取消任何挂起的「失活延迟关闭」，
+        // 保证这次点击不会在决策之后再被失活逻辑关掉（弹回）。
+        resignCloseItem?.cancel()
         let now = ProcessInfo.processInfo.systemUptime
         let wasShown: Bool
         if let record = stateAtMouseDown, now - record.at < Self.clickActionWindow {
@@ -474,6 +477,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
 
         if onIcon {
+            // 这一下是图标点击：取消「失活延迟关闭」，交给 toggle 做唯一决策，
+            // 避免失活（点图标也会触发）把面板抢先关掉再被 toggle 当「打开」弹回。
+            resignCloseItem?.cancel()
             // 本地事件接住了这一下，别让看门狗再切一次
             pendingIconClickAt = nil
             // …也别让全局监视器为这一下安排的「关闭」落地（几何判断万一失手，
@@ -526,6 +532,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// 一次点击就白费了。正常路径下本地事件 30~70 ms 就到，会把这条标记清掉。
     private var pendingIconClickAt: TimeInterval?
 
+    /// 失活（⌘Tab / 切到别的 App / 点桌面）触发的「延迟关闭」任务。
+    /// 见 `scheduleResignClose`：图标点击也会让 App 失活，立刻关会和被按钮
+    /// `mouse-up` 的开关决策抢，导致「关不掉 / 点一下又弹回」，所以做成可取消。
+    private var resignCloseItem: DispatchWorkItem?
+
     /// 交接窗口。真机实测全局比本地早 27~70 ms，给到 150 ms 有余量。
     private static let iconHandoverWindow: TimeInterval = 0.15
 
@@ -543,9 +554,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private static let globalDismissDelay: TimeInterval = 0.08
 
+    /// 失活时关面板（⌘Tab / 切走 App / 点桌面）。
+    ///
+    /// 必须「延迟 + 可取消」，不能像原来那样立刻 `closePopover()`：菜单栏由系统托管，
+    /// **点图标那一下也会触发 `didResignActive`**（系统先让 App 失活再转交事件）。若立刻关，
+    /// 等按钮 `mouse-up` 跑起来读 `stateAtMouseDown.shown` 时面板已经被关 → 误判成
+    /// 「用户要打开」→ 刚关掉又弹回，表现就是「关不掉 / 点一下又弹回」。
+    ///
+    /// 延迟 100 ms 远大于一次点击的 down→up（<0.3 s），图标点击路径（`handleMouseDown`
+    /// 的图标分支、`notePendingIconClick`、`togglePopover`）会在这期间把这次延迟关闭取消掉；
+    /// 真·切走 App 不会取消，照常关。这样面板开/关状态到 `mouse-up` 才是权威的，
+    /// `stateAtMouseDown` 也读得到正确值。
+    private func scheduleResignClose() {
+        resignCloseItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.isPopoverVisible else { return }
+            PopoverClickLog.write("resign close → close")
+            self.closePopover()
+        }
+        resignCloseItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+    }
+
     private func notePendingIconClick() {
         let now = ProcessInfo.processInfo.systemUptime
         pendingIconClickAt = now
+        // 全局事件先看到图标点击：同样取消「失活延迟关闭」，否则只给了全局事件
+        // 的系统差异下，延迟关闭会在 toggle 之前落地 → 同一条「关→开」弹回。
+        resignCloseItem?.cancel()
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.iconHandoverWindow) { [weak self] in
             guard let self, let marked = self.pendingIconClickAt else { return }
             // 期间又来了新的一下：让它自己的定时器负责，这里不管。
@@ -574,6 +610,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         popoverVisible = false
+        // 面板已关，丢弃任何挂起的「失活延迟关闭」，避免它稍后误关（幂等，但没必要再跑）。
+        resignCloseItem?.cancel()
+        resignCloseItem = nil
         // 关掉的 popover 窗口虽然不可见，里面的 SwiftUI 视图仍会按显示刷新率
         // 重排版（整棵 LazyStack 重算），空闲 CPU 从 1% 涨到 12%+（issue #3，
         // 已在 M2 真机验证：12~16% → 1.8~1.9%）。换成同尺寸空白视图把代价归零，
@@ -745,12 +784,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // 切换到别的 App（⌘Tab / Mission Control）时关掉面板。
         // `.transient` 原本由 AppKit 负责，现在归我们自己：全局鼠标监视器只能覆盖
         // 「点一下」这一种离开方式，纯键盘切走得靠这条通知兜住。
+        // 注意：这里走「延迟 + 可取消」的 `scheduleResignClose`，不能立刻关——
+        // 点图标也会触发失活，立刻关会和按钮 `mouse-up` 的开关决策抢（见该方法）。
         NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.closePopover()
+            self?.scheduleResignClose()
         }
 
         // 用户去「系统设置 → 登录项与扩展」批准后台项后会切回来，
