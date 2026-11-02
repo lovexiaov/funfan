@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private var popoverHosting: NSHostingController<AnyView>?
+    private var popoverRootView: AnyView?
+    private var popoverContentCleared = false
     private var popoverSizeObservation: NSKeyValueObservation?
     private let monitor = MonitorStore()
     private let control = ControlStore()
@@ -252,23 +254,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.animates = false
         popover.delegate = self
 
-        let hosting = NSHostingController(
-            rootView: AnyView(
-                MenuBarView(
-                    monitor: monitor,
-                    control: control,
-                    diagnostics: diagnostics,
-                    installer: helperInstaller,
-                    onOpenRules: { [weak self] in self?.showRulesWindow() },
-                    onOpenCurve: { [weak self] in self?.showCurveWindow() },
-                    onOpenSettings: { [weak self] in self?.showSettingsWindow() },
-                    onQuit: { NSApp.terminate(nil) }
-                )
-                // 色令牌由根视图注入（见 Theme.swift）。必须挂在 rootView 上：
-                // 子视图靠 `@Environment(\.palette)` 取，漏了就会落回深色兜底。
-                .funfanTheme()
+        let rootView = AnyView(
+            MenuBarView(
+                monitor: monitor,
+                control: control,
+                diagnostics: diagnostics,
+                installer: helperInstaller,
+                onOpenRules: { [weak self] in self?.showRulesWindow() },
+                onOpenCurve: { [weak self] in self?.showCurveWindow() },
+                onOpenSettings: { [weak self] in self?.showSettingsWindow() },
+                onQuit: { NSApp.terminate(nil) }
             )
+            // 色令牌由根视图注入（见 Theme.swift）。必须挂在 rootView 上：
+            // 子视图靠 `@Environment(\.palette)` 取，漏了就会落回深色兜底。
+            .funfanTheme()
         )
+        popoverRootView = rootView
+
+        let hosting = NSHostingController(rootView: rootView)
         // 让 hosting 自己把理想尺寸报上来，否则 popover 会一直用首次显示时的固定高度
         hosting.sizingOptions = [.preferredContentSize]
         popover.contentViewController = hosting
@@ -319,6 +322,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func showPopover() {
         guard let button = statusItem.button else { return }
+        // 关闭时换成了空白占位（见 popoverDidClose），打开前挂回真内容。
+        if popoverContentCleared, let rootView = popoverRootView {
+            popoverHosting?.rootView = rootView
+            popoverContentCleared = false
+        }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -516,6 +524,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         popoverVisible = false
+        // 关掉的 popover 窗口虽然不可见，里面的 SwiftUI 视图仍会按显示刷新率
+        // 重排版（整棵 LazyStack 重算），空闲 CPU 从 1% 涨到 12%+（issue #3，
+        // 已在 M2 真机验证：12~16% → 1.8~1.9%）。换成同尺寸空白视图把代价归零，
+        // 下次打开前再挂回（见 showPopover）。
+        //
+        // 用「同尺寸」而不是零尺寸：`sizingOptions = [.preferredContentSize]`
+        // 会在隐藏期间持续上报理想尺寸，占位为 0 会把 contentSize 改小，
+        // 重开时先以极小尺寸显示再跳回，产生可见抖动。
+        let size = popoverHosting?.preferredContentSize ?? .zero
+        popoverHosting?.rootView = AnyView(
+            Color.clear.frame(width: max(size.width, 1), height: max(size.height, 1))
+        )
+        popoverContentCleared = true
         refreshVisibility()
     }
 
