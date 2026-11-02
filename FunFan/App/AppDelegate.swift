@@ -27,6 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var popoverVisible = false
     private var clickMonitors: [Any] = []
     private var signalSources: [DispatchSourceSignal] = []
+    /// 重启取证提示一次启动只弹一次。
+    private var bootRepairAlertShown = false
+    /// 开机后多久内探测到 helper 没自启才算「重启故障」（与 HelperDiagnosis.isPostBootFailure 同窗口）。
+    private static let bootRepairWindow: TimeInterval = 600
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - 生命周期
@@ -83,6 +87,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     "特权 helper 不可用",
                     context: ["stage": "ControlStore.bootstrap"]
                 )
+            }
+            .store(in: &cancellables)
+
+        // 重启后自启失败（issue #1）：刚开机窗口内发现 helper 已装但 launchd 没加载，
+        // 就自动落一份取证报告并弹一次提示，方便报障机器把证据发回来。
+        helperInstaller.$needsBootRepair
+            .sink { [weak self] needed in
+                guard needed, let self else { return }
+                let bootTime = SystemProbe().systemBootTime()
+                // 复用 HelperDiagnosis 的纯判定：只在「刚启动」窗口内算重启故障，
+                // 用户手动 launchctl bootout 调试触发的 needsBootRepair 不算。
+                guard HelperDiagnosis(
+                    binaryInstalled: true, plistInstalled: true, launchdLoaded: false
+                ).isPostBootFailure(bootTime: bootTime) else { return }
+                self.diagnostics.generateBootRepairReport(bootTime: bootTime)
+            }
+            .store(in: &cancellables)
+
+        // 报告生成后置位提示，由这里弹一次性 alert。
+        diagnostics.$bootRepairPrompt
+            .sink { [weak self] show in
+                guard show else { return }
+                self?.presentBootRepairAlert()
             }
             .store(in: &cancellables)
 
@@ -197,6 +224,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard let index = CommandLine.arguments.firstIndex(of: "--rpm"),
               CommandLine.arguments.indices.contains(index + 1) else { return nil }
         return Double(CommandLine.arguments[index + 1])
+    }
+
+    // MARK: - 重启取证提示（issue #1）
+
+    /// 重启后自启失败的一次性提示：告诉用户已生成报告，并给「查看报告」入口。
+    ///
+    /// 只在启动后探测到 `needsBootRepair` 且系统刚重启时弹一次；其余情况（用户手动
+    /// 卸载调试、或事后才发现）走面板里的「诊断报告」按钮，不在这打扰。
+    private func presentBootRepairAlert() {
+        guard !bootRepairAlertShown else { return }
+        bootRepairAlertShown = true
+
+        let alert = NSAlert()
+        alert.messageText = "后台组件重启后没有自动启动"
+        alert.informativeText = "已生成一份诊断报告（含启动时间、launchd 状态与 helper 日志），可发给我们定位 issue #1。报告已存到诊断目录。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "查看报告")
+        alert.addButton(withTitle: "稍后")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            diagnostics.shareBootRepairReport(bootTime: SystemProbe().systemBootTime())
+        }
+        diagnostics.dismissBootRepairPrompt()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
