@@ -72,6 +72,11 @@ struct MenuBarView: View {
                 Text(date, style: .relative)
                     .font(Theme.Typo.meta)
                     .foregroundStyle(palette.textTertiary)
+                    // 只有数字 +「秒」、没有「前」字，第一眼极易被读成某个设置值
+                    // （用户实测反馈：「设置按钮旁边那个 x 秒是干啥用的」）。
+                    // 悬停补一句确切含义 + 当前刷新频率。
+                    .help(freshnessHelp(since: date))
+                    .accessibilityLabel(freshnessHelp(since: date))
             }
             Button(action: onOpenSettings) {
                 Image(systemName: "gearshape")
@@ -84,6 +89,26 @@ struct MenuBarView: View {
             .help("设置")
             .accessibilityLabel("设置")
         }
+    }
+
+    /// 头部「x 秒」的悬停说明。
+    ///
+    /// 那个值是 `Text(date, style: .relative)` 渲染的「上次采样距今多久」，自己每秒跳；
+    /// 但屏幕上只有数字和「秒」，读起来像个设置项，所以补一条解释。
+    /// 刷新频率取自 `SamplingPolicy`（唯一真源），不在这里写死「2 秒」——
+    /// 自动化接管时它其实是 1 秒，写死就会误导。
+    private func freshnessHelp(since last: Date) -> String {
+        let interval = SamplingPolicy.interval(
+            for: control.strategy.isAutomated ? .automation : .popoverOpen
+        )
+        let age = max(0, Date().timeIntervalSince(last))
+        let cadence = "正常情况下每 \(SampleFreshness.durationText(interval))刷新一次"
+        // 「刚刚完成采样前」不像人话，1 秒内单独说一句。
+        let head = age < 1
+            ? "刚刚完成采样，\(cadence)"
+            : "上次采样于 \(SampleFreshness.durationText(age))前，\(cadence)"
+        guard SampleFreshness.isStale(age: age, interval: interval) else { return head }
+        return head + "。已明显超出周期，采样可能已停止（SMC 读取失败或 App 被挂起）"
     }
 
     // MARK: - 冲突提示
