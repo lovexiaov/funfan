@@ -12,21 +12,23 @@ final class SamplingPolicyTests: XCTestCase {
         let menu = SamplingPolicy.interval(for: .menuBarOnly)
         let idle = SamplingPolicy.interval(for: .idle)
 
-        // 面板打开 1 s：温度是慢变量，1 s 刷新肉眼无感；不再比引擎档更快
-        // （原来 0.5 s 是「用户在看 = 最高频」的惯性，白白多烧一倍采样）
-        XCTAssertEqual(open, 1.0, accuracy: 1e-9)
+        // 面板打开 2 s：温度是慢变量，2 s 刷新肉眼无感，与仅菜单栏同档。
+        // M14 之前是 0.5 s（「用户在看 = 最高频」的惯性）→ M13 降到 1 s →
+        // 两层采样落地后再降到 2 s：面板打开时的单帧成本已由白名单砍掉大半，
+        // 频率也不再有任何消费者需要（引擎档 1 s 仍是唯一的高频需求方）。
+        XCTAssertEqual(open, 2.0, accuracy: 1e-9)
         XCTAssertEqual(menu, 2.0, accuracy: 1e-9)
         XCTAssertEqual(idle, 5.0, accuracy: 1e-9)
-        XCTAssertLessThanOrEqual(open, menu)
+        XCTAssertEqual(open, menu, "面板档与菜单栏档同频")
         XCTAssertLessThan(menu, idle)
     }
 
     func testShouldSampleRespectsInterval() {
         let last = Date(timeIntervalSince1970: 1_000)
 
-        // Popover 打开：1 s 到期
-        XCTAssertFalse(SamplingPolicy.shouldSample(last: last, now: last.addingTimeInterval(0.9), visibility: .popoverOpen))
-        XCTAssertTrue(SamplingPolicy.shouldSample(last: last, now: last.addingTimeInterval(1.0), visibility: .popoverOpen))
+        // Popover 打开：2 s 到期（M14 起，与仅菜单栏同档）
+        XCTAssertFalse(SamplingPolicy.shouldSample(last: last, now: last.addingTimeInterval(1.9), visibility: .popoverOpen))
+        XCTAssertTrue(SamplingPolicy.shouldSample(last: last, now: last.addingTimeInterval(2.0), visibility: .popoverOpen))
 
         // 仅菜单栏：2 s 到期
         XCTAssertFalse(SamplingPolicy.shouldSample(last: last, now: last.addingTimeInterval(1.9), visibility: .menuBarOnly))
@@ -37,17 +39,17 @@ final class SamplingPolicyTests: XCTestCase {
         XCTAssertTrue(SamplingPolicy.shouldSample(last: last, now: last.addingTimeInterval(5.0), visibility: .idle))
     }
 
-    /// 规则接管时：1 Hz 引擎档。面板打开也收敛到同档——引擎需要的最高频率
-    /// 就是 1 Hz，UI 不需要比它更快。
-    func testAutomationMatchesPopoverCadence() {
+    /// 规则接管时：1 Hz 引擎档，是全部档位里唯一的（也是最快的）高频需求方。
+    /// 面板打开自 M14 起降到 2 s——引擎要的是控制响应，UI 要的只是「看着在动」。
+    func testAutomationIsTheFastestTier() {
         let automation = SamplingPolicy.interval(for: .automation)
 
         XCTAssertEqual(automation, 1.0, accuracy: 1e-9)
-        XCTAssertEqual(automation, SamplingPolicy.interval(for: .popoverOpen), "引擎档与面板档同频：1 Hz 对两者都够")
+        XCTAssertLessThan(automation, SamplingPolicy.interval(for: .popoverOpen), "引擎档必须快于面板档：控制响应优先于显示刷新")
         XCTAssertLessThan(automation, SamplingPolicy.interval(for: .menuBarOnly))
 
-        // 1 Hz × 19.5 ms ≈ 2% 单核，规则接管时的可接受开销
-        let percent = 19.5 / (automation * 1000) * 100
+        // 1 Hz × 21.5 ms（本机 M4 实测稳态单帧）≈ 2.2% 单核，规则接管时的可接受开销
+        let percent = 21.5 / (automation * 1000) * 100
         XCTAssertLessThan(percent, 2.5, "规则接管时应低于 2.5% 单核")
     }
 
@@ -75,6 +77,6 @@ final class SamplingPolicyTests: XCTestCase {
         XCTAssertLessThan(menuPercent, 1.5, "仅菜单栏显示时应低于 1.5% 单核")
 
         let openPercent = frameMs / (SamplingPolicy.interval(for: .popoverOpen) * 1000) * 100
-        XCTAssertLessThan(openPercent, 2.5, "面板打开时应低于 2.5% 单核")
+        XCTAssertLessThan(openPercent, 1.5, "面板打开时应低于 1.5% 单核")
     }
 }

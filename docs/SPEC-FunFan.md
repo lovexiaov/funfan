@@ -109,7 +109,7 @@ FunFan/
 │   │   ├── CoreGroups.swift        # 按簇聚合温度组，列出真实 SMC 探测点（非核）
 │   │   ├── SensorMonitor.swift     # 滑动均值引擎（注入样本源，纯逻辑）
 │   │   ├── SMCTemperatureProvider.swift # 键表缓存 + 类别过滤 + 合理性过滤
-│   │   └── SamplingPolicy.swift    # 自适应采样频率（1 / 2 / 5 s）
+│   │   └── SamplingPolicy.swift    # 自适应采样频率（引擎 1 / 显示 2 / 空闲 5 s）
 │   ├── Battery/
 │   │   ├── BatteryState.swift      # 状态模型 + 派生计算
 │   │   ├── BatteryStore.swift      # IOPS + AppleSmartBattery 双源合并
@@ -166,7 +166,8 @@ FunFan/
 - **采样范围与频率（性能约束，实测驱动）**：
   - 键信息（`dataSize`/`dataType`）开机内不变 → `SMCService` 缓存，读值只需 1 次 IPC（实测 IPC 1584 → 107 次/帧）。
   - 默认**不采样 `.other`** 类别（未识别传感器可达 52 个，占近三分之一成本且不展示）。
-  - 自适应频率 `SamplingPolicy`：Popover 打开 1 s（与规则/曲线引擎同频；曾用 0.5 s，温度是慢变量、UI 无感且比引擎还快，纯浪费）、仅菜单栏 2 s、空闲 5 s。实测单帧 19.5 ms（M4 Pro / 107 传感器），对应 ≈2.0% / 1.0% / 0.4% 单核占用。
+  - 自适应频率 `SamplingPolicy`：自动化接管（规则/曲线引擎）1 s（唯一的高频需求方，控制响应优先）、Popover 打开 2 s、仅菜单栏 2 s、空闲 5 s。面板打开的演进：0.5 s → 1 s（M13）→ 2 s（M14，温度是慢变量、UI 无感）。
+  - **两层采样（M14）**：`SMCTemperatureProvider.fullScanEvery`（默认 1 = 每帧全量的旧行为；生产传 10）——每 N 帧做一次全量扫描并缓存各键读数，快帧只真读「上轮全扫中每类最热 K 个键」（`perCategoryHotKeys = 4`），其余键复用缓存值，**输出形状与全量一致**（消费方零改动，均温/hottest/明细列表稳定）。代价：非白名单键最多陈旧 N−1 帧。实测见 `FunFanProbe --tier`。
 
 **规则数据模型（Codable，持久化至 `~/Library/Application Support/FunFan/rules.json`）**
 ```swift
@@ -302,7 +303,7 @@ struct SMCParamStruct {
 7. **安全**：任何曲线/手动/规则值都被安全下限限制（只能更快不能更慢于温度下限）；多规则冲突取最大 RPM；不可设 0 RPM；不可低于系统最小。
 8. **健壮性**：睡眠/唤醒、合盖后自动重申请并保持期望状态；应用退出/崩溃后风扇回到系统自动；**租约/XPC 中断后按有界退避自动重连，且用户策略不被改写**（重启后仍是上次选的策略，除非用户自己改）；单实例锁生效。
 9. **无冲突**：启动检测到其他风扇控制器持有时，友好提示并拒绝接管，仅恢复自身动过的风扇。
-10. **轻量**：菜单栏常驻内存占用低（守护进程 + GUI 合计量级几十 MB）；**采样 CPU 占用可量化**——单帧 ≤ 20 ms（107 传感器实测 19.5 ms），空闲态 < 0.5% 单核、仅菜单栏 < 1.5% 单核（`SamplingPolicyTests` 已固化为断言）。
+10. **轻量**：菜单栏常驻内存占用低（守护进程 + GUI 合计量级几十 MB）；**采样 CPU 占用可量化**——全量单帧 ≤ 22 ms（M4 实测 21.5 ms），两层采样快帧更低（`FunFanProbe --tier` 实测），空闲态 < 0.5% 单核、显示态 < 1.5% 单核（`SamplingPolicyTests` 已固化为断言）。
 11. **分发**：`make build` 产出可运行 app；Developer ID 签名 + 公证后无 Gatekeeper 拦截；helper 经一次授权安装。
 12. **兼容最新系统**：在调研时的最新 macOS（Sequoia/Tahoe 等）上通过上述 1–11；大版本升级后复测解锁序列与规则行为。
 

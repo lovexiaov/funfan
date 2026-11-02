@@ -540,7 +540,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         refreshVisibility()
     }
 
-    /// 采样频率：合盖 > 自动化接管 = 面板打开（1 s）> 仅菜单栏（2 s）。
+    /// 采样频率：自动化接管（1 s）> 面板打开 = 仅菜单栏（2 s）> 合盖（5 s）。
+    /// 自动化档排最前：引擎要控制响应；面板/菜单栏只是给人看的，2 s 够了。
     private func refreshVisibility() {
         let visibility: SamplingPolicy.Visibility
         if lid.isClosed {

@@ -2,21 +2,20 @@ import Foundation
 
 /// 采样频率策略：按「用户是否在看」分档，避免常驻后台时白烧 CPU。
 ///
-/// 实测依据（M4 Pro，107 个已知传感器）：单帧 ≈ 19.5 ms / 107 次 IPC，
-/// 平均每次 IPC ≈ 180 µs（AppleSMC 内核调用成本，App 侧无法优化掉）。
+/// 实测依据（Mac mini M4，107 个采样键）：全量单帧 ≈ 21.5 ms / 107 次 IPC，
+/// 平均每次 IPC ≈ 200 µs（AppleSMC 内核调用成本，App 侧无法优化掉）。
 ///
 /// | 可见性 | 间隔 | 稳态占用 |
 /// |---|---|---|
-/// | Popover 打开 | 1.0 s | ≈ 2.0% 单核 |
-/// | 仅菜单栏 | 2.0 s | ≈ 1.0% 单核 |
+/// | Popover 打开 | 2.0 s | ≈ 1.1% 单核（两层采样后更低） |
+/// | 仅菜单栏 | 2.0 s | ≈ 1.1% 单核 |
+/// | 自动化接管（规则/曲线引擎） | 1.0 s | ≈ 2.2% 单核 |
 /// | 空闲（面板关、无规则） | 5.0 s | ≈ 0.4% 单核 |
 ///
-/// 面板打开曾用 0.5 s，后降为 1.0 s：温度是慢变量，1 s 刷新肉眼无感；
-/// 且规则/曲线引擎的档位本来就是 1 Hz——面板打开没有理由比引擎还快。
-/// （issue #3 实测的另一面：面板打开期间的大头是 SwiftUI 渲染显示周期，
-/// 采样只占零头，但这零头也该省。）
-///
-/// 规则引擎激活时由控制层单独持有 1 Hz 采样，不受此处影响。
+/// 面板打开的演进：0.5 s（「用户在看 = 最高频」的惯性）→ 1.0 s（M13，引擎档
+/// 是频率上限）→ 2.0 s（M14，温度是慢变量、2 s 刷新肉眼无感，且两层采样让
+/// 单帧成本本身也降下来了）。频率上真正没有商量余地的只剩引擎档：控制响应
+/// 需要 1 Hz。
 public enum SamplingPolicy {
 
     /// 当前 UI 可见性。
@@ -25,7 +24,7 @@ public enum SamplingPolicy {
         case popoverOpen
         /// 仅菜单栏图标显示（需要刷新图标上的温度数字）。
         case menuBarOnly
-        /// 面板关闭，但规则自动化正在接管——需要足够快的响应，又不能像面板打开那样费电。
+        /// 规则/曲线自动化正在接管——控制响应需要 1 Hz，是全部档位里唯一的高频需求方。
         case automation
         /// 面板关闭且无规则在跑。
         case idle
@@ -34,7 +33,7 @@ public enum SamplingPolicy {
     /// 采样间隔（秒）。
     public static func interval(for visibility: Visibility) -> TimeInterval {
         switch visibility {
-        case .popoverOpen: return 1.0
+        case .popoverOpen: return 2.0
         case .menuBarOnly: return 2.0
         case .automation: return 1.0
         case .idle: return 5.0
