@@ -92,6 +92,23 @@ public struct HelperDiagnosis: Codable, Equatable {
         binaryInstalled && plistInstalled && launchdLoaded == false
     }
 
+    /// 是否「重启后自启失败」场景：文件都在、launchd 明确没加载（needsBootRepair），
+    /// 且系统刚启动不久（`freshBootWindow` 默认 10 分钟）。
+    ///
+    /// FunFan 作为登录项在开机后很快启动，此时探测到没自启基本就是重启导致；
+    /// 而用户手动 `launchctl bootout` 调试时也会触发 needsBootRepair，但那不是重启，
+    /// 用「刚启动」这个窗口把它和真正的重启故障区分开，避免误报。
+    /// 拿不到启动时间（nil）则一律返回 false——分不清时就别编造结论。
+    public func isPostBootFailure(
+        bootTime: Date?,
+        now: Date = Date(),
+        freshBootWindow: TimeInterval = 600
+    ) -> Bool {
+        guard needsBootRepair else { return false }
+        guard let bootTime else { return false }
+        return now.timeIntervalSince(bootTime) <= freshBootWindow
+    }
+
     public var summary: String {
         switch (binaryInstalled, plistInstalled) {
         case (true, true):

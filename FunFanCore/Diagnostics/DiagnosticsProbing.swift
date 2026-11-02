@@ -15,6 +15,10 @@ public protocol DiagnosticsProbing {
     func hasBattery() -> Bool
     func displays() -> DisplayProbe
     func helperDiagnosis() -> HelperDiagnosis
+    /// 系统启动时间（kern.boottime）。用于判断「是不是刚重启完」——
+    /// FunFan 作为登录项在开机后很快启动，此时探测到 helper 没自启基本就是重启导致。
+    /// 拿不到（sysctl 失败）返回 nil，调用方据此「不编造结论」。
+    func systemBootTime() -> Date?
 }
 
 /// 真实环境实现（sysctl / IOKit / CoreGraphics / 文件系统）。
@@ -53,6 +57,15 @@ public struct SystemProbe: DiagnosticsProbing {
 
     public func hasBattery() -> Bool {
         BatteryDetailParser.parse(AppleSmartBatteryReader.properties()).present
+    }
+
+    /// 系统启动时间：`kern.boottime` 是 `struct timeval`（Unix 纪元秒 + 微秒）。
+    /// spawn/sysctl 失败返回 nil，绝不编造。
+    public func systemBootTime() -> Date? {
+        var tv = timeval()
+        var size = MemoryLayout<timeval>.size
+        guard sysctlbyname("kern.boottime", &tv, &size, nil, 0) == 0 else { return nil }
+        return Date(timeIntervalSince1970: Double(tv.tv_sec) + Double(tv.tv_usec) / 1_000_000)
     }
 
     /// 用「在线」显示列表：显示器休眠只是 active = false，合盖才是物理断电离线。
