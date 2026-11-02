@@ -483,6 +483,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if onIcon {
             // 这一下是图标点击：取消「失活延迟关闭」，交给 toggle 做唯一决策，
             // 避免失活（点图标也会触发）把面板抢先关掉再被 toggle 当「打开」弹回。
+            if resignCloseItem != nil {
+                PopoverClickLog.write("down 图标 → 取消失活延迟关闭")
+            }
             resignCloseItem?.cancel()
             // 本地事件接住了这一下，别让看门狗再切一次
             pendingIconClickAt = nil
@@ -571,6 +574,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// `stateAtMouseDown` 也读得到正确值。
     private func scheduleResignClose() {
         resignCloseItem?.cancel()
+        PopoverClickLog.write("resign → defer close (+100ms；等图标点击来取消)")
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.isPopoverVisible else { return }
             PopoverClickLog.write("resign close → close")
