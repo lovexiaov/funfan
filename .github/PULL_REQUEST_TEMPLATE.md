@@ -19,4 +19,4 @@
 - [ ] 没有触碰安全红线（写 `F0Mn`/`F0Mx`、发 0 RPM、放宽签名校验、移除租约看门狗）
 - [ ] 安全相关常量仍然只有一个真源
 - [ ] 如果改了 bundle id 相关文件，已说明原因（fork 构建请勿提交到上游）
-- [ ] 我已阅读 [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md)，代码按 MIT 授权
+- [ ] 我已阅读 [CONTRIBUTING.md](https://github.com/lovexiaov/funfan/blob/main/CONTRIBUTING.md)，代码按 MIT 授权

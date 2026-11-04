@@ -3,7 +3,7 @@ name: release
 # 自动打包：推一个 tag 上来，CI 负责编译 → 单测 → 组 .app → DMG/ZIP → 校验和 → 挂到 Release。
 #
 # 为什么 CI 只能出 adhoc 包：
-#   项目没有 Apple Developer Program 证书（见 README「签名与公证」）。CI 里没有证书、
+#   项目没有 Apple Developer Program 证书（见 docs/BUILD.md / docs/RELEASE.md）。CI 里没有证书、
 #   没有公证凭据，能做的就是 adhoc 签名——和本机 `make publish-unsigned` 同一种产物，
 #   Gatekeeper 同样会拦一次。哪天买了证书，把证书与 notarytool 凭据塞进 Secrets 后
 #   在下面「打包」一步换成 `bash scripts/notarize.sh` 即可。

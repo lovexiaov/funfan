@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: 安装被拦：提示「已损坏」或「无法验证」
-    url: https://github.com/lovexiaov/funfan#安装
-    about: 本项目没有 Apple 签名证书，首次启动需要手动放行一次。这是预期行为，先看 README 这一节。
+    url: https://github.com/lovexiaov/funfan/blob/main/docs/INSTALL.md
+    about: 本项目没有 Apple 签名证书，首次启动需要手动放行一次。这是预期行为，先看安装文档的「放行一次」。
   - name: 安全问题
     url: https://github.com/lovexiaov/funfan/security/advisories/new
     about: 涉及 root helper、权限绕过、风扇失控的问题请走私密渠道，不要开公开 issue。
   - name: 使用与开发文档
     url: https://github.com/lovexiaov/funfan/blob/main/README.md
-    about: 安装、源码构建、命令行、打包、已知问题都在 README 和 docs/ 里。
+    about: README 的文档索引汇总了安装、命令行、打包、架构等专题文档。

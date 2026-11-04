@@ -48,6 +48,6 @@ FunFan 会以 **root 权限** 安装一个后台组件（`cn.lovexiaov.fun.fan.h
 
 ## 不算安全问题的
 
-- Gatekeeper 拦截、「已损坏，无法打开」——这是未公证包的预期行为，见 README 安装一节
+- Gatekeeper 拦截、「已损坏，无法打开」——这是未公证包的预期行为，见 [安装与卸载](docs/INSTALL.md) 的「放行一次」
 - 需要先拿到 root / 管理员密码才能做的事
 - 自己改代码或改 SMC 键表导致的异常
