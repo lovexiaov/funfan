@@ -34,16 +34,9 @@ macOS 菜单栏风扇控制工具，面向 **Apple Silicon**。零第三方依�
 
 ## 安装
 
-> **当前没有可下载的发布包。** 此前两个 alpha 包（`v1.0.0-alpha.1` / `v1.0.0-alpha.2`）已撤回：它们由改名前的 bundle id（`com.funfan`）构建，会在机器上留下一个旧后台组件，与新版本共存时会和新 helper 抢同一个风扇。换标识之后尚未重新发版，现在请走下面的「从源码构建」。
+从 [Releases](https://github.com/lovexiaov/funfan/releases) 下载最新版的 `FunFan-<版本>.dmg`，按下面四步安装。目前发布的都是 **alpha 预发布版**，每个版本附三个附件：给人下载的 DMG、给自动更新器的 ZIP、校验用的 `SHA256SUMS.txt`。
 
-装过旧包的机器，先把残留清掉（默认只体检，`--apply` 才真删；删前会备份到 `.build/legacy-purge-backup/`）：
-
-```bash
-bash scripts/purge-legacy.sh                # 体检：只列出会清什么
-sudo bash scripts/purge-legacy.sh --apply   # 确认无误后真清（系统侧 + 用户侧）
-```
-
-发版之后，从 [Releases](https://github.com/lovexiaov/funfan/releases) 下载 `FunFan-<版本>.dmg`，再按下面四步走。
+> **装过早期 alpha 包请先清残留。** `v1.0.0-alpha.1` / `v1.0.0-alpha.2` 由改名前的 bundle id（`com.funfan`）构建，会在机器上留下一个旧后台组件，与新版本共存时会和新 helper 抢同一个风扇；这两个包已撤回。装过它们的机器，先按下面「清理改名前的残留」一节清一遍，再装新版。
 
 > **分发包没有 Apple 签名证书，也没有经过公证。** FunFan 是个人项目，没有加入 Apple Developer Program（$99/年），产物是 adhoc 签名，macOS 会拦它一次，需要你手动放行。功能完全不受影响，代价只是首次启动多两步。信不过就往下看「从源码构建」，自己编出来的包不会有这道拦截。
 
@@ -334,7 +327,7 @@ M6（打包加固）已落地：`.app` 打包、Developer ID 签名 + 公证 + �
 
 **分发形态：未签名、未公证。** 已决定不购买 Apple Developer Program 会员（$99/年），对外发的就是 adhoc 签名的内测包，用户按「安装」一节手动放行一次。签名 + 公证的脚本留在仓库里，将来有证书可以直接启用，不需要改代码。这个选择的代价很具体：每个下载的人多两步点击，而且每次升级都要重复。
 
-已撤回：`v1.0.0-alpha.1` / `v1.0.0-alpha.2` 的包由改名前的 bundle id 构建，已从 Releases 删除，tag 与本地标签一并清掉（对应提交仍在历史里）。装过旧包的机器用 `sudo bash scripts/purge-legacy.sh --apply` 清残留。下次发版会以当前标识重新打包。
+已撤回：`v1.0.0-alpha.1` / `v1.0.0-alpha.2` 的包由改名前的 bundle id 构建，已从 Releases 删除，tag 与本地标签一并清掉（对应提交仍在历史里）。装过旧包的机器用 `sudo bash scripts/purge-legacy.sh --apply` 清残留。换用新标识 `cn.lovexiaov.fun.fan` 后已重新发版（`v1.0.0-alpha.3` 起），现存安装包都是新标识构建的。
 
 未完成：T16b 端到端合盖验证（需笔记本机型）。
 
