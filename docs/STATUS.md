@@ -2,7 +2,7 @@
 
 > 从 [README](../README.md) 拆出。逐版本改动见 [CHANGELOG.md](CHANGELOG.md)，逐项验收记录在本地台账 `tasks/todo.md`（该目录未纳入仓库）。
 
-M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、291 个单测全绿。
+M1（SMC 地基）→ M5（GUI）已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、354 个单测全绿（2026-11-04 `make test` 实测）。
 
 策略四态（自动 / 固定 / 曲线 / 规则）全部可用，曲线与规则编辑器均已落地；设置窗口支持登录启动、菜单栏显示开关、一键自检与免责声明。
 
@@ -14,4 +14,4 @@ M6（打包加固）已落地：`.app` 打包、Developer ID 签名 + 公证 + �
 
 已撤回：`v1.0.0-alpha.1` / `v1.0.0-alpha.2` 的包由改名前的 bundle id 构建，已从 Releases 删除，tag 与本地标签一并清掉（对应提交仍在历史里）。装过旧包的机器用 `sudo bash scripts/purge-legacy.sh --apply` 清残留。换用新标识 `cn.lovexiaov.fun.fan` 后已重新发版（`v1.0.0-alpha.3` 起），现存安装包都是新标识构建的。
 
-未完成：T16b 端到端合盖验证（需笔记本机型）。
+T16b 端到端合盖验证已在 **MacBook Pro M2** 真机完成（用户确认）。此前开发机 Mac mini 无内建屏、无电池，`isPortable=false` 使合盖判定路径整体不生效，只能靠 `--simulate-lid` 注入信号验行为链；现在合盖判定本身也有了笔记本真机结果。模拟注入仍保留给无盖机型做回归。

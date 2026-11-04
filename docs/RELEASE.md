@@ -31,7 +31,7 @@ xcrun notarytool store-credentials funfan-notary \
 ## 1. 出包
 
 ```bash
-make test          # 281 个单测必须全绿
+make test          # 354 个单测必须全绿
 make notary-check  # 体检：缺什么会直接说，不猜
 make notarize      # 签名 → DMG → 公证 → 装订 → Gatekeeper 验收
 ```

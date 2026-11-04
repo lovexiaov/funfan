@@ -59,7 +59,7 @@ git clone https://github.com/lovexiaov/funfan.git
 cd funfan
 
 make build        # 调试构建（含 CLI / helper / probe / GUI）
-make test         # 291 个单测
+make test         # 354 个单测
 make run          # 启动菜单栏 App
 ```
 

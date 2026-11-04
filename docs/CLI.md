@@ -29,6 +29,6 @@ GUI 支持几个调试启动参数，用来在没有人在屏幕前的情况下�
 
 `--strategy` 会在 bootstrap 完成 1.5 s 后生效，并把决定打进日志。验证时配合 `funfanctl status` 看「目标 / 模式」是否变化；`kill -9` 掉 GUI 后约 10 s 应自动回到 `automatic`（helper 租约看门狗）。
 
-`--simulate-lid` 是为**没有盖子的机器**准备的：合盖判定本身验不了，但「接管 → 合盖返还 → 挂起期间拒绝重新接管 → 开盖恢复」这条链可以。取值 `closed` / `open` / `cycle`（`cycle` = 3 s 后合盖、11 s 后开盖）。
+`--simulate-lid` 是为**没有盖子的开发机**（Mac mini）准备的：那台机器上合盖判定路径不生效，但「接管 → 合盖返还 → 挂起期间拒绝重新接管 → 开盖恢复」这条链可以靠注入信号回归。合盖判定本身已在 MacBook Pro M2 真机验证，见 [STATUS.md](STATUS.md)。取值 `closed` / `open` / `cycle`（`cycle` = 3 s 后合盖、11 s 后开盖）。
 
 打包后的 helper 状态查询（必须直接跑包内可执行文件，`open --args` 拿不到 stdout）见 [BUILD.md](BUILD.md)。

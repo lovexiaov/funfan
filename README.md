@@ -64,9 +64,9 @@ make build && make test && make run
 
 ## 状态
 
-M1–M6 已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、291 个单测全绿；策略四态（自动 / 固定 / 曲线 / 规则）全部可用。
+M1–M6 已完成并在真机（Mac mini M4 / macOS 27）验证：180/180 温度键可读、风扇 1000–4900 RPM 写入生效、354 个单测全绿；策略四态（自动 / 固定 / 曲线 / 规则）全部可用。
 
-目前对外发的是 **未签名、未公证的 alpha 预发布版**（个人项目，未加入 Apple Developer Program），首次启动需手动放行一次；未完成 T16b 端到端合盖验证（需笔记本机型）。详见 [STATUS.md](docs/STATUS.md)。
+目前对外发的是 **未签名、未公证的 alpha 预发布版**（个人项目，未加入 Apple Developer Program），首次启动需手动放行一次。合盖检测与风扇返还已在 MacBook Pro M2 真机验证；完整验证记录见 [STATUS.md](docs/STATUS.md)。
 
 ## 许可与贡献
 

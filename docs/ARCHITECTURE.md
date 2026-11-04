@@ -20,7 +20,7 @@ FunFan/         SwiftUI 菜单栏 App
 FunFanCtl/      CLI（funfanctl）
 FunFanHelper/   特权 helper（XPC + 看门狗）
 FunFanProbe/    真机探针
-Tests/          291 个单测
+Tests/          354 个单测
 ```
 
 零第三方依赖；逻辑放 `FunFanCore`（无 UI 依赖、可单测），UI 只在 `FunFan`。
