@@ -214,7 +214,7 @@ swift build --disable-sandbox
 ./.build/debug/FunFan --render popover  /tmp/pop.png    --scale 3 --scheme light
 ./.build/debug/FunFan --render editor   /tmp/editor.png --scale 3
 ```
-`--scheme light|dark`（默认 dark）把对应 `Palette` 注入环境再渲染；**走查必须明暗各渲一遍**——2026-11 复审的教训就是全部截图只有深色，浅色的语义色失效（1.28–2.52:1）长期无人发现。`--flat` 供含 `ScrollView` 的画面用：以「不滚动、全部摊开」的方式渲染内容（走查专用，真机仍滚动）。
+`--scheme light|dark`（默认 dark）把对应 `Palette` 注入环境再渲染；**走查必须明暗各渲一遍**——2026-11 复审的教训就是全部截图只有深色，浅色的语义色失效（1.28–2.52:1）长期无人发现。`--flat` 供含 `ScrollView` 的画面用：以「不滚动、全部摊开」的方式渲染内容（走查专用，真机仍滚动）。`settings` 这个 target 默认就摊平（该页整页可滚，不摊平只会拍到空白）。
 
 焦点环不在 `ImageRenderer` 的产出里（它不参与响应者链，拿不到键盘焦点），加 `--force-focus` 可以强制画出来走查几何：
 ```
@@ -243,4 +243,13 @@ screencapture -x /tmp/shot.png
 | 环境格三态：available→度数 / pending→`—` / unsupported→「无传感器」+tooltip | `MonitorStore.ambientAvailability` → `MenuBarView.tempChip` | 见附录 C「环境格」条目；本机实测无 `TA*` 键，「—」会被误读为暂时读不到 |
 | 曲线安全下限从红带改中性斜纹 + 虚线；当前温度线改中性虚线 | `CurveEditorView.swift` | 红色只留给真正过热（≥75℃）；红带会被误读成「危险区」而非「画不到的地方」 |
 | 弹窗展开区限高 280pt 内滚动；走查看全量用 `--render popover-cores --flat` | `MenuBarView.expandedThermalDetail` | P 簇 41 探测点会把 320pt popover 撑到 1700pt+；`ImageRenderer` 渲染不出 `ScrollView`，摊开模式是走查与真机之间唯一一致的观察窗 |
-| 设置窗口高度 540×800（`minHeight` 780） | `AppDelegate.swift`、`SettingsView.swift` | 内容自然高度 ≈790pt（外观组 + 免责声明完整显示）；旧 580 会裁掉免责声明。无 ScrollView，高度必须给足 |
+| 设置窗口 540×860，改为**可缩放 + 内容可滚动**（`minHeight` 560） | `AppDelegate.swift`、`SettingsView.swift` | 2026-11-10 新增「风扇调速」组后内容自然高度 **932pt**，实测原 540×800 固定窗口已把「免责声明」整段裁掉（比文档写的 ≈790 更大，是因为诊断提示行会随状态出现）。设置项只会越加越多，固定高度迟早再裁；改为滚动 + 可缩放。走查用 `--render settings` 会自动摊平 `ScrollView`（该 target 默认带摊平，否则 `ImageRenderer` 拍成空白） |
+
+## 附录 E · 调速依据温度（2026-11-10）
+
+| 偏差 / 决策 | 位置 | 原因 |
+|---|---|---|
+| 设置页新增「风扇调速 → 调速依据温度」分段控件（最高温度 / 平均温度），放在「外观」之后、「通用」之前 | `SettingsView.temperatureSection` | 它直接改变风扇转速，比登录项这类「装完就不再看」的开关重要得多，不该沉在通用组；`固定转速` 滑块在 popover 里也是同一逻辑（控制参数贴着使用场景） |
+| 副标题带实时读数：最高温口径显示「当前最热 N℃」；均温口径显示「当前均温 N℃」并**明写**「安全下限同样按均温计算」 | 同上 | 两种口径差十几度，不给读数用户只能凭感觉判断；「选了均温以后机器比以前热」若不解释，会被当成 bug |
+| 曲线编辑器顶部的温度 chip 标签随口径变（最热 / 均温），温度虚线、曲线取值点、以及「曲线给的转速」全部改用当前口径 | `CurveEditorView.basisCelsius` | 原来固定用 `hottestCelsius`：按均温调速时会出现「曲线按 78℃ 画、引擎按 52℃ 出转速」，两个数字对不上 |
+| 暖/冷色判定仍用当前口径的温度值（`palette.temperature(die)`） | 同上 | 均温口径下「均温 60℃」不应该是红色；颜色跟随用户实际在看的那个数 |
