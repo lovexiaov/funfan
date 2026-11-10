@@ -57,15 +57,19 @@ public struct RuleAutomation {
     }
 
     /// 评估一轮，返回**需要下发的命令**（nil 表示本轮什么都不用做）。
+    ///
+    /// - Parameter aggregation: 安全下限用哪个温度口径（最高温 / 均温），由用户在设置里选。
     public mutating func update(
         snapshot: SensorSnapshot,
         rules: [FanRule],
         limits: FanLimits,
         now: Date,
+        aggregation: TemperatureAggregation = .peak,
         profile: SafetyProfile = .default
     ) -> Command? {
         let evaluation = engine.evaluate(
-            snapshot: snapshot, rules: rules, limits: limits, profile: profile
+            snapshot: snapshot, rules: rules, limits: limits,
+            aggregation: aggregation, profile: profile
         )
 
         triggeredRuleIDs = evaluation.triggeredRuleIDs

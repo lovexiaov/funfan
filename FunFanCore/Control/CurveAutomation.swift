@@ -12,7 +12,7 @@ public struct CurveAutomation {
 
     public typealias Command = ControlCommandGate.Command
 
-    /// 片内温度取哪个值由调用方决定（通常与规则引擎一致：全部传感器最大值）。
+    /// 芯片温度（口径由调用方决定：最高温 / 均温，见 `TemperatureAggregation`）。
     public private(set) var dieCelsius: Double?
     /// 曲线原始输出（未过安全下限），供 UI 展示「你画的曲线给了多少」。
     public private(set) var rawCurveRpm: Double?
@@ -49,7 +49,8 @@ public struct CurveAutomation {
     ///
     /// - Parameters:
     ///   - curve: 当前曲线（每次传入，用户在编辑器里拖动后立刻生效）。
-    ///   - dieCelsius: 芯片温度；nil（尚无采样）时返还系统，而不是猜一个转速。
+    ///   - dieCelsius: 芯片温度（已按用户选择的最高温 / 均温口径聚合）；
+    ///     nil（尚无采样）时返还系统，而不是猜一个转速。
     ///   - secondsElapsed: 距上轮秒数，用于斜率限制。
     public mutating func update(
         curve: FanCurve,

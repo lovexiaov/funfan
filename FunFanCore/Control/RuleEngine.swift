@@ -133,7 +133,7 @@ public struct RuleEvaluation: Equatable, Sendable {
     public let commandedRpm: Double?
     /// 本次处于触发状态的规则 ID（按规则顺序）。
     public let triggeredRuleIDs: [UUID]
-    /// 用于安全下限的芯片温度（快照内最高温度）。
+    /// 用于安全下限的芯片温度（口径由 `aggregation` 决定）。
     public let dieCelsius: Double?
 
     public init(commandedRpm: Double?, triggeredRuleIDs: [UUID], dieCelsius: Double?) {
@@ -168,13 +168,17 @@ public struct RuleEngine {
     }
 
     /// 评估一轮规则。
+    ///
+    /// - Parameter aggregation: 「芯片温度」用哪个口径（最高温 / 均温）。它只影响
+    ///   `dieCelsius` 与安全下限；每条规则触发与否仍由规则自己的 `subject` + `metric` 决定。
     public mutating func evaluate(
         snapshot: SensorSnapshot,
         rules: [FanRule],
         limits: FanLimits,
+        aggregation: TemperatureAggregation = .peak,
         profile: SafetyProfile = .default
     ) -> RuleEvaluation {
-        let dieCelsius = snapshot.readings.map(\.celsius).max()
+        let dieCelsius = snapshot.controlCelsius(aggregation)
 
         var triggeredIDs: [UUID] = []
         var candidates: [Double] = []

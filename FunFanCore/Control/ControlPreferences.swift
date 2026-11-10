@@ -11,6 +11,7 @@ public struct ControlPreferences {
 
     public static let strategyKey = "FunFan.controlStrategy"
     public static let fixedRpmKey = "FunFan.fixedRpm"
+    public static let temperatureAggregationKey = "FunFan.temperatureAggregation"
     public static let defaultFixedRpm: Double = 2000
 
     private let defaults: UserDefaults
@@ -33,6 +34,23 @@ public struct ControlPreferences {
         }
         nonmutating set {
             defaults.set(newValue.rawValue, forKey: Self.strategyKey)
+        }
+    }
+
+    /// 调速依据温度的口径（最高温 / 均温）。
+    ///
+    /// 无法识别（旧版本写过别的值、手改 plist）时回落「最高温」——那是
+    /// 更保守的一侧：宁可多转，也不会因为读不懂配置而让风扇少转。
+    public var temperatureAggregation: TemperatureAggregation {
+        get {
+            guard let raw = defaults.string(forKey: Self.temperatureAggregationKey),
+                  let value = TemperatureAggregation(rawValue: raw) else {
+                return .peak
+            }
+            return value
+        }
+        nonmutating set {
+            defaults.set(newValue.rawValue, forKey: Self.temperatureAggregationKey)
         }
     }
 

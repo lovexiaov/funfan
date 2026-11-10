@@ -83,6 +83,22 @@ final class ControlPreferencesTests: XCTestCase {
         XCTAssertEqual(ControlPreferences(defaults: defaults).fixedRpm, 6200)
     }
 
+    // MARK: - 调速依据
+
+    func testTemperatureAggregationDefaultsToPeak() {
+        XCTAssertEqual(ControlPreferences(defaults: defaults).temperatureAggregation, .peak)
+    }
+
+    func testTemperatureAggregationSurvivesNewInstance() {
+        ControlPreferences(defaults: defaults).temperatureAggregation = .average
+        XCTAssertEqual(ControlPreferences(defaults: defaults).temperatureAggregation, .average)
+    }
+
+    func testUnknownTemperatureAggregationFallsBackToPeak() {
+        defaults.set("median", forKey: ControlPreferences.temperatureAggregationKey)
+        XCTAssertEqual(ControlPreferences(defaults: defaults).temperatureAggregation, .peak)
+    }
+
     // MARK: - 兼容性契约
 
     /// rawValue 会写进用户 plist，改名等于让老用户的选择回落到自动。
@@ -96,6 +112,7 @@ final class ControlPreferencesTests: XCTestCase {
     func testKeysAreNamespaced() {
         XCTAssertEqual(ControlPreferences.strategyKey, "FunFan.controlStrategy")
         XCTAssertEqual(ControlPreferences.fixedRpmKey, "FunFan.fixedRpm")
+        XCTAssertEqual(ControlPreferences.temperatureAggregationKey, "FunFan.temperatureAggregation")
     }
 
     func testAutomatedStrategies() {
