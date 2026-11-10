@@ -112,7 +112,18 @@ public struct UpdateChecker {
         }
 
         let releases = try ReleaseFeed.decode(response.body)
+        return Self.select(from: releases, current: current, skipping: skipping)
+    }
 
+    /// 从已解析的发布列表里挑一个该推给用户的版本。
+    ///
+    /// 单独拆出来是为了「用抓下来的真实响应复现选择结果」——探针与单测都走这一条，
+    /// 而不是各自抄一遍过滤条件（抄一遍就会分叉：探针说没更新、App 说有）。
+    public static func select(
+        from releases: [ReleaseInfo],
+        current: SemanticVersion,
+        skipping: String? = nil
+    ) -> UpdateOutcome {
         let candidates = releases
             // 正式版用户不收预发布：他要的是稳定，不是最新。
             .filter { current.isPrerelease || !$0.isPrerelease }
@@ -125,7 +136,7 @@ public struct UpdateChecker {
         return .available(best)
     }
 
-    private func matchesSkip(_ info: ReleaseInfo, _ skipping: String?) -> Bool {
+    private static func matchesSkip(_ info: ReleaseInfo, _ skipping: String?) -> Bool {
         guard let skipping, !skipping.isEmpty else { return false }
         if info.tag == skipping { return true }
         if let version = SemanticVersion(parsing: skipping), version == info.version { return true }

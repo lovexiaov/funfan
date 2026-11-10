@@ -5,6 +5,15 @@ import FunFanCore
 // 「全键枚举 → 温度键筛选 → 归类 → 2Hz 采样 → 平滑 → 快照」与电量读取。
 // 运行：swift run --disable-sandbox FunFanProbe [--keys]
 
+// --update-check：真机打一次 GitHub 发布列表。
+// 必须在 `smc.open()` 之前分流：检查更新不需要任何硬件权限，
+// 而 SMC 打不开（无权限/非本机）时它仍应能验证网络与解析链路。
+//   swift run --disable-sandbox FunFanProbe --update-check [--current 1.0.0-alpha.5]
+if CommandLine.arguments.contains("--update-check") {
+    runUpdateCheckProbe()
+    exit(0)
+}
+
 let smc = SMCService()
 do {
     try smc.open()
@@ -232,4 +241,89 @@ private func runTierComparison(smc: SMCService) {
     print(String(format: "[Tier] 数据对比：均温最大偏差 %.3f℃（%@）｜hottest 最大偏差 %.3f℃｜单键最大偏差 %.3f℃",
                  maxAvgDelta, maxAvgCategory as NSString, maxHottestDelta, maxKeyDelta))
     print("[Tier] 形状：\(shapeMismatchFrames == 0 ? "全部 \(frames) 帧键集合一致 ✓" : "\(shapeMismatchFrames) 帧键集合不一致 ✗")")
+}
+
+// MARK: - 更新检查探针
+
+/// 真机验证「检查更新」的完整链路：真实网络 → 真实 GitHub 列表 → 版本比较。
+///
+/// 为什么放在探针里而不是只靠单测：单测用的夹具是我按文档写的，
+/// 而 `tag_name` / `prerelease` / `browser_download_url` 这些字段到底叫什么、
+/// 草稿会不会漏出来、`/releases/latest` 是不是真的 404，只有打一次真接口才知道。
+func runUpdateCheckProbe() {
+    let arguments = CommandLine.arguments
+    let overridden = arguments.firstIndex(of: "--current").flatMap { index -> String? in
+        index + 1 < arguments.count ? arguments[index + 1] : nil
+    }
+    let fromBundle = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    let raw = overridden ?? fromBundle ?? "0.0.0"
+    guard let current = SemanticVersion(parsing: raw) else {
+        print("[Update] 版本号无法解析：\(raw)")
+        return
+    }
+
+    let source = overridden != nil ? "--current" : (fromBundle != nil ? "Info.plist" : "兜底默认")
+    print("[Update] 当前版本 \(current)（来源：\(source)）")
+    print("[Update] 端点 \(UpdateChecker.defaultFeedURL.absoluteString)")
+
+    let prefs = UpdatePreferences(defaults: .standard)
+    print("[Update] 自动检查默认值=\(UpdatePreferences.defaultAutoCheck) 当前=\(prefs.autoCheckEnabled) "
+          + "已忽略=\(prefs.skippedVersion ?? "无") 上次检查=\(prefs.lastCheckedAt.map { "\($0)" } ?? "从未")")
+
+    // --feed <文件>：用一份抓下来的真实响应跑选择逻辑（不联网）。
+    // 用途：出口 IP 被限流时仍能验证解析；复现「某次发布为什么没被推出来」。
+    if let index = arguments.firstIndex(of: "--feed"), index + 1 < arguments.count {
+        let path = arguments[index + 1]
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            let releases = try ReleaseFeed.decode(data)
+            print("[Update] 本地响应解析出 \(releases.count) 条已发布版本：")
+            for info in releases.sorted(by: { $0.version < $1.version }) {
+                print("[Update]   \(info.version)  tag=\(info.tag)  pre=\(info.isPrerelease)  "
+                      + "assets=\(info.assets.count)  dmg=\(info.assets.contains { $0.name.lowercased().hasSuffix(".dmg") })")
+            }
+            let outcome = UpdateChecker.select(
+                from: releases, current: current, skipping: prefs.skippedVersion
+            )
+            describe(outcome, elapsed: nil)
+        } catch {
+            print("[Update] 本地响应解析失败：\(error)")
+        }
+        return
+    }
+
+    let semaphore = DispatchSemaphore(value: 0)
+    Task {
+        let started = Date()
+        do {
+            let outcome = try await UpdateChecker().check(current: current, skipping: prefs.skippedVersion)
+            describe(outcome, elapsed: Date().timeIntervalSince(started) * 1000)
+        } catch let failure as UpdateFailure {
+            print("[Update] 失败（分类）：\(failure)")
+            print("[Update] 给用户的话：\(failure.message)")
+        } catch {
+            print("[Update] 失败（未归类）：\(error.localizedDescription)")
+        }
+        semaphore.signal()
+    }
+    semaphore.wait()
+}
+
+/// 把选择结果打印成人话。联网与本地响应两条路径共用，避免两边说法不一致。
+private func describe(_ outcome: UpdateOutcome, elapsed: Double?) {
+    let timing = elapsed.map { String(format: "，耗时 %.0f ms", $0) } ?? ""
+    switch outcome {
+    case .upToDate(let version):
+        print("[Update] 已是最新（当前 \(version)\(timing)）")
+    case .available(let info):
+        print("[Update] 发现新版本 \(info.version)（tag \(info.tag)，预发布=\(info.isPrerelease ? "是" : "否")\(timing)）")
+        print("[Update] 下载链接：\(info.downloadURL?.absoluteString ?? "无")")
+        print("[Update] 发布页面：\(info.pageURL?.absoluteString ?? "无")")
+        if let published = info.publishedAt {
+            print("[Update] 发布时间：\(published)")
+        }
+        for line in info.notes.split(separator: "\n").prefix(3) {
+            print("[Update] notes| \(line)")
+        }
+    }
 }
