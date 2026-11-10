@@ -15,6 +15,7 @@ struct SettingsView: View {
     @ObservedObject var installer: HelperInstaller
     /// 只用来显示「现在按几度在算」，不参与控制逻辑。
     @ObservedObject var monitor: MonitorStore
+    @ObservedObject var update: UpdateStore
 
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var colorScheme
@@ -61,6 +62,7 @@ struct SettingsView: View {
             generalSection
             helperSection
             diagnosisSection
+            updateSection
             aboutSection
         }
         .padding(16)
@@ -397,6 +399,103 @@ struct SettingsView: View {
             diagnosisSummary = summary
             isDiagnosing = false
         }
+    }
+
+    // MARK: - 更新
+
+    /// 更新检查。
+    ///
+    /// 放在「关于」之前而不是塞进关于里：它有一个真实会改变状态的按钮和一条会
+    /// 变色的提示，不是纯展示信息。但也不往上挪——它和风扇行为无关，
+    /// 不该插在「调速依据温度」和「特权组件」之间打断控制相关的分组。
+    private var updateSection: some View {
+        section("更新") {
+            if let info = update.availableRelease {
+                availableUpdateCard(info)
+            }
+
+            SettingRow(
+                title: "检查更新",
+                subtitle: update.statusText,
+                isLast: false
+            ) {
+                FunFanButton(
+                    title: update.isChecking ? "检查中…" : "检查更新",
+                    systemImage: "arrow.triangle.2.circlepath",
+                    isEnabled: !update.isChecking && update.canCheck
+                ) {
+                    update.checkManually()
+                }
+            }
+
+            SettingRow(
+                title: "每天自动检查一次",
+                subtitle: "启动时向 api.github.com 查一次，只发送当前版本号，不含任何设备或使用信息。关闭时只有点上面的按钮才联网。",
+                isLast: true
+            ) {
+                FunFanToggle(isOn: $update.autoCheckEnabled, size: 24)
+            }
+        }
+    }
+
+    /// 发现新版本时的高亮卡片。
+    ///
+    /// 用 accent 而不是 attention：有新版本是好消息，不是警告。
+    /// 但下载说明必须写「拖进应用程序覆盖」——直接运行下载目录里的 `.app`
+    /// 会触发 App Translocation，后台组件装不上（发布手册里的老坑）。
+    private func availableUpdateCard(_ info: ReleaseInfo) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.accentFill)
+                // 不用字符串插值直接塞 SemanticVersion：它走 LocalizedStringKey
+                // 的插值会告「本地化插值退化成 debug 描述」，显式取 description 更干净。
+                Text("有新版本 " + info.version.description)
+                    .font(Theme.Typo.metaStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+            }
+
+            Text(updateCardSubtitle(info))
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                FunFanButton(title: "下载", systemImage: "arrow.down.circle") {
+                    update.openDownloadPage()
+                }
+                FunFanButton(title: "忽略此版本", systemImage: "eye.slash") {
+                    update.skipCurrentUpdate()
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(palette.accentWash)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(palette.accentFill.opacity(0.25), lineWidth: 0.5)
+        )
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+    }
+
+    private func updateCardSubtitle(_ info: ReleaseInfo) -> String {
+        var text = ""
+        if let published = info.publishedAt {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "zh_CN")
+            formatter.dateFormat = "yyyy-MM-dd"
+            text += "发布于 \(formatter.string(from: published))。"
+        }
+        text += "下载 DMG 后按里面的引导把 FunFan 拖进「应用程序」覆盖安装；忽略只跳过这一个版本，更新的版本还会提示。"
+        return text
     }
 
     // MARK: - 关于

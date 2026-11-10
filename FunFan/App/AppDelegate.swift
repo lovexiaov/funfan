@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let curve = CurveStore()
     private let lid = LidMonitor()
     private let diagnostics = DiagnosticsStore()
+    private let update = UpdateStore()
     private let settings = SettingsStore()
     private let helperInstaller = HelperInstaller()
     /// Popover 的跨重开 UI 状态（展开态等）。必须是稳定实例：面板关闭时 rootView
@@ -134,6 +135,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         monitor.start()
         control.bootstrap()
+
+        // 更新检查默认**不联网**（见 `UpdatePreferences`）。开了「每天自动检查」
+        // 才在启动 3 秒后查一次；距上次成功检查不足 24h 会被节流挡掉。
+        // 延后是刻意的：首次采样与 helper 连接更该抢先，检查更新只是顺带。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            self?.update.autoCheckIfDue()
+        }
 
         // 调试/验收用：`FunFan --rules-window` / `--curve-window` 直接开窗，省去点菜单栏
         if CommandLine.arguments.contains("--rules-window") {
@@ -314,6 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 diagnostics: diagnostics,
                 installer: helperInstaller,
                 ui: popoverUI,
+                update: update,
                 onOpenRules: { [weak self] in self?.showRulesWindow() },
                 onOpenCurve: { [weak self] in self?.showCurveWindow() },
                 onOpenSettings: { [weak self] in self?.showSettingsWindow() },
@@ -725,7 +734,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     control: control,
                     diagnostics: diagnostics,
                     installer: helperInstaller,
-                    monitor: monitor
+                    monitor: monitor,
+                    update: update
                 )
                 .funfanTheme()
             )

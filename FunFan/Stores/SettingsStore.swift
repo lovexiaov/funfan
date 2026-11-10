@@ -102,7 +102,7 @@ final class SettingsStore: ObservableObject {
     @Published var focusRingVisible: Bool {
         didSet {
             guard focusRingVisible != oldValue else { return }
-            var prefs = DisplayPreferences(defaults: defaults)
+            let prefs = DisplayPreferences(defaults: defaults)
             prefs.focusRingVisible = focusRingVisible
         }
     }

@@ -10,6 +10,8 @@ struct MenuBarView: View {
     @ObservedObject var installer: HelperInstaller
     /// 跨「关闭→重开」保留的 UI 状态（展开态等）。见 `PopoverUIState`。
     @ObservedObject var ui: PopoverUIState
+    /// 只在「自动检查发现新版本」时露一行提示；关掉自动检查就永远不出现。
+    @ObservedObject var update: UpdateStore
     var onOpenRules: () -> Void
     var onOpenCurve: () -> Void
     var onOpenSettings: () -> Void
@@ -24,6 +26,7 @@ struct MenuBarView: View {
         diagnostics: DiagnosticsStore,
         installer: HelperInstaller,
         ui: PopoverUIState,
+        update: UpdateStore,
         onOpenRules: @escaping () -> Void,
         onOpenCurve: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
@@ -33,6 +36,7 @@ struct MenuBarView: View {
         self.control = control
         self.diagnostics = diagnostics
         self.installer = installer
+        self.update = update
         self.ui = ui
         self.onOpenRules = onOpenRules
         self.onOpenCurve = onOpenCurve
@@ -52,6 +56,9 @@ struct MenuBarView: View {
                 batterySection
             }
             controlSection
+            if update.hasUpdate {
+                updateNotice
+            }
             footer
         }
         .padding(14)
@@ -726,6 +733,35 @@ struct MenuBarView: View {
                 .funfanFocusRing(cornerRadius: 5, outset: 2)
                 .font(Theme.Typo.meta)
                 .foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    /// 新版本提示（只在自动检查发现更新时出现）。
+    ///
+    /// 刻意做成一行而不是一条横幅卡片：这里的主线是风扇状态，
+    /// 更新提示是「顺带告诉你一声」。做成整块卡片会把面板高度顶起来，
+    /// 把「控制策略」挤下去——那是用户打开面板真正要动的东西。
+    private var updateNotice: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(palette.accentFill)
+            Text("有新版本 \(update.availableRelease?.version.description ?? "")")
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: 0)
+            Button("下载") { update.openDownloadPage() }
+                .buttonStyle(.plain)
+                .funfanFocusRing(cornerRadius: 5, outset: 2)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.accentText)
+                .help("打开新版本的下载页")
+            Button("忽略") { update.skipCurrentUpdate() }
+                .buttonStyle(.plain)
+                .funfanFocusRing(cornerRadius: 5, outset: 2)
+                .font(Theme.Typo.meta)
+                .foregroundStyle(palette.textTertiary)
+                .help("跳过这个版本；出现更新的版本时还会提示")
         }
     }
 

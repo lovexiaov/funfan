@@ -75,6 +75,35 @@ enum RenderCheck {
         return args[index + 1] == "light" ? .light : .dark
     }
 
+    /// 走查用的 `UpdateStore`。
+    ///
+    /// 默认是「什么都没查过」的空状态；加 `--update-available` 就摆成「有新版本」，
+    /// 用来检查高亮卡片、两个按钮和长副标题在 540pt 宽里是否放得下——
+    /// 这个状态**只有在真的发布了新版本时才会出现**，平时根本走查不到。
+    private static func updateStoreForRender() -> UpdateStore {
+        let store = UpdateStore(versionString: "1.0.0-alpha.7")
+        guard CommandLine.arguments.contains("--update-available"),
+              let version = SemanticVersion(parsing: "1.0.0-alpha.8") else {
+            return store
+        }
+        store.preview(.available(ReleaseInfo(
+            tag: "v1.0.0-alpha.8",
+            version: version,
+            name: "FunFan 1.0.0-alpha.8",
+            isPrerelease: true,
+            publishedAt: Date(timeIntervalSince1970: 1_793_462_400),
+            pageURL: URL(string: "https://github.com/lovexiaov/funfan/releases/tag/v1.0.0-alpha.8"),
+            notes: "",
+            assets: [
+                ReleaseAsset(
+                    name: "FunFan-1.0.0-alpha.8.dmg",
+                    downloadURL: URL(string: "https://example.com/FunFan-1.0.0-alpha.8.dmg")
+                )
+            ]
+        )))
+        return store
+    }
+
     @MainActor
     private static func render(target: String, output: String, liveMonitor: MonitorStore?) {
         let temporary = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -122,9 +151,10 @@ enum RenderCheck {
                     control: control,
                     diagnostics: DiagnosticsStore(),
                     installer: HelperInstaller(),
-                    monitor: monitor
+                    monitor: monitor,
+                    update: updateStoreForRender()
                 )
-                .frame(width: 540, height: 960)
+                .frame(width: 540, height: 1400)
             )
         case "popover":
             content = AnyView(
@@ -132,6 +162,7 @@ enum RenderCheck {
                     monitor: monitor, control: control, diagnostics: DiagnosticsStore(),
                     installer: HelperInstaller(),
                     ui: PopoverUIState(),
+                    update: updateStoreForRender(),
                     onOpenRules: {}, onOpenCurve: {}, onOpenSettings: {}, onQuit: {}
                 )
                     .background(Palette.resolve(schemeValue()).panelFill)
@@ -144,6 +175,7 @@ enum RenderCheck {
                     monitor: monitor, control: control, diagnostics: DiagnosticsStore(),
                     installer: HelperInstaller(),
                     ui: PopoverUIState(showCores: true),
+                    update: updateStoreForRender(),
                     onOpenRules: {}, onOpenCurve: {}, onOpenSettings: {}, onQuit: {}
                 )
                     .background(Palette.resolve(schemeValue()).panelFill)
