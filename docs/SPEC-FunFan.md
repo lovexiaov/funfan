@@ -219,6 +219,23 @@ struct FanRule: Codable, Identifiable {
 - **事件驱动**：通过 `IOPSNotificationCreateRunLoopSource()` 注册回调，电源状态变化时触发读取，避免低效轮询；**无电池机型（Mac mini/Studio/Pro 台式机）优雅降级为空**。
 - **与温度监控的关系**：电池温度既可由本模块从 `AppleSmartBattery.Temperature` 取得，也可由 `SensorCatalog` 的 `TB*` SMC 键取得（已在 §4.1 归类）；建议优先 SMC `TB*`（与其它温度统一展示），本模块不重复暴露。
 
+### 4.3 更新检查设计要点
+
+- **只检查，不安装**：没有任何自动下载/自替换。产物是 adhoc 签名、未公证，自替换会绕过 Gatekeeper 那一次人工放行，也会让 helper 对客户端的签名校验（`HelperSignature`）失效。升级唯一路径仍是「挂载 DMG → 拖进应用程序」，与发布手册验证过的路径一致。
+- **端点必须是 `GET /repos/{owner}/{repo}/releases`，不能用 `/releases/latest`**：后者只返回「非预发布、非草稿」的最新版；本项目所有版本都带 `-alpha`，匿名请求它直接 **404**（2026-11-11 实测），那样更新检查会永远报「找不到发布列表」。列表接口返回全部已发布项，预发布过滤由我们按「当前版本是不是预发布」判断。
+- **零第三方依赖**：不用 Sparkle。约 300 行（`SemanticVersion` + `ReleaseFeed` + `UpdateChecker`）就能覆盖「查一下有没有新版」。Sparkle 的价值在自动更新与增量下载，而这两件事本项目不做。
+- **版本比较按 semver §11**：字符串比较会把 `1.0.0-alpha.10` 判成小于 `alpha.9`（`'1' < '9'`），第 10 个预发布版永远推不出来且**不报错**。三条硬规则：数字标识符按数值比、数字 < 字母、正式版 > 同号预发布。迁就真实 tag 的宽容项见 `SemanticVersion` 文档注释（`v` 前缀、缺补丁位、前导零、`+` 构建元数据）。
+- **谁能收到什么**（`UpdateChecker.select`）：
+  | 当前版本 | 可选范围 |
+  |---|---|
+  | 预发布（`1.0.0-alpha.7`） | 全部非草稿版本，取最高 |
+  | 正式版（`1.0.0`） | 只收正式版，取最高 |
+  | 用户「忽略」过 `X` | 跳过 `X` 本身，更新的版本照常提示 |
+- **草稿永不推送**：匿名接口本来不返回草稿，带凭据/镜像会返回，所以解析层再挡一次（`ReleaseFeed.parse`）。
+- **失败要分类**：`network` / `http(status)` / `rateLimited(resetAt)` / `malformed`。GitHub 未认证接口按 IP 限 60 次/小时，撞上限流时「稍后再试」等于没说，必须给等待时间。
+- **默认不联网**：`UpdatePreferences.defaultAutoCheck = false`。免责声明写着「不收集任何数据」，默认替用户发请求与这句话冲突；打开「每天自动检查」才按 24h 节流（`shouldAutoCheck`，时间戳落在未来时不查）在启动 3 秒后查一次。失败不写 `lastCheckedAt`——一次断网不该吃掉当天的额度。
+- **附件选择**：优先 `.dmg`；没有 dmg 就退回 release 页面，**不退回 `.zip`**（解压出的 `.app` 落在「下载」目录运行会触发 App Translocation，helper 装不上）。
+
 ---
 
 ## 5. Code Style（代码风格）
