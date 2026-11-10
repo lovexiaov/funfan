@@ -96,10 +96,19 @@ do {
        let minRpm = try? smc.readKey(SMCKeyName.fanMin(0)),
        let maxRpm = try? smc.readKey(SMCKeyName.fanMax(0)) {
         let limits = FanLimits(minRpm: minRpm, maxRpm: maxRpm)
-        let die = snapshot.readings.map(\.celsius).max() ?? 0
+        let die = snapshot.controlCelsius(.peak) ?? 0
         print(String(format: "[Control] limits=%.0f–%.0f  die=%.1f℃  安全下限=%.0f",
                      limits.minRpm, limits.maxRpm, die,
                      SafetyPolicy.floorRpm(dieCelsius: die, limits: limits)))
+
+        // 两种调速口径的真机差值（设置项「调速依据温度」）：同一帧数据下
+        // 均温口径会把安全下限压低多少，靠静态推算看不出来。
+        if let avgDie = snapshot.controlCelsius(.average) {
+            let peakFloor = SafetyPolicy.floorRpm(dieCelsius: die, limits: limits)
+            let avgFloor = SafetyPolicy.floorRpm(dieCelsius: avgDie, limits: limits)
+            print(String(format: "[Control] 均温口径 %.1f℃  安全下限=%.0f（比最高温口径 %+.0f）",
+                         avgDie, avgFloor, avgFloor - peakFloor))
+        }
 
         let curve = FanCurve(points: [
             CurvePoint(celsius: 45, rpm: minRpm),
