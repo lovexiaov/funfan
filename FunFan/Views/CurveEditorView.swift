@@ -28,6 +28,15 @@ struct CurveEditorView: View {
 
     private var limits: FanLimits { control.limits }
 
+    /// 当前调速口径下的芯片温度。
+    ///
+    /// 编辑器里的温度线、曲线取值点、以及「曲线给的转速」都必须用**同一个**
+    /// 温度值——用最热画线而引擎按均温输出，用户会看到「曲线上 3200、
+    /// 实际下发 1800」这种对不上的画面。
+    private var basisCelsius: Double? {
+        monitor.controlTemperature(control.temperatureAggregation)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -80,13 +89,13 @@ struct CurveEditorView: View {
     /// 「曲线给的」vs「实际下发的」——不一致就说明安全下限在接管。
     private var liveSummary: some View {
         HStack(spacing: 10) {
-            if let die = monitor.hottestCelsius {
+            if let die = basisCelsius {
                 HStack(spacing: 4) {
                     TemperatureIndicator(level: .init(die), color: palette.temperature(die), size: 6)
-                    statChip("最热", String(format: "%.0f℃", die), color: palette.textPrimary)
+                    statChip(control.temperatureAggregation.shortLabel, String(format: "%.0f℃", die), color: palette.textPrimary)
                 }
             }
-            if let die = monitor.hottestCelsius, let curveRpm = store.curve.rpm(at: die) {
+            if let die = basisCelsius, let curveRpm = store.curve.rpm(at: die) {
                 statChip("曲线", String(format: "%.0f", curveRpm), color: palette.textPrimary)
             }
             if let commanded = control.automatedRpm {
@@ -275,7 +284,7 @@ struct CurveEditorView: View {
     /// 又都是彩色，画布上三四种颜色互相抢。现在只有曲线本身带色。
     @ViewBuilder
     private func currentMarker(in rect: CGRect) -> some View {
-        if let die = monitor.hottestCelsius, tempRange.contains(die) {
+        if let die = basisCelsius, tempRange.contains(die) {
             let x = xPos(die, in: rect)
             Path { path in
                 path.move(to: CGPoint(x: x, y: rect.minY))

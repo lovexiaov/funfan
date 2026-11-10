@@ -319,6 +319,28 @@ extension ControlStrategy {
     }
 }
 
+/// 调速依据的文案。
+///
+/// 放在 App 而不是 `FunFanCore`：Core 只认 `.peak` / `.average` 两个口径，
+/// 中文措辞属于界面，改文案不该动到引擎。
+extension TemperatureAggregation {
+    /// 设置页里的选项名。
+    var settingLabel: String {
+        switch self {
+        case .peak: return "最高温度"
+        case .average: return "平均温度"
+        }
+    }
+
+    /// 读数处的短标签（曲线编辑器顶部的温度 chip）。
+    var shortLabel: String {
+        switch self {
+        case .peak: return "最热"
+        case .average: return "均温"
+        }
+    }
+}
+
 extension View {
     /// 只在条件成立时挂 `help`。
     ///

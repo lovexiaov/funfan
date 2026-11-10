@@ -52,6 +52,33 @@ final class ControlStore: ObservableObject {
         }
     }
 
+    /// 调速依据：最高温 / 均温。
+    ///
+    /// 它同时改变曲线的插值输入与安全下限的锚点，所以切换时必须把两个引擎的
+    /// 迟滞/斜率状态清掉——否则引擎会拿「上一个是峰值口径」的历史温度去比对
+    /// 这一帧的均温，凭空多出十几度的落差，迟滞判定就失效了。
+    @Published var temperatureAggregation: TemperatureAggregation = .peak {
+        didSet {
+            guard temperatureAggregation != oldValue else { return }
+            guard !isRestoringPreferences else { return }
+            prefs.temperatureAggregation = temperatureAggregation
+            ControlJournal.write("用户改调速依据：\(oldValue.rawValue) → \(temperatureAggregation.rawValue)（落盘）")
+            let newValue = temperatureAggregation
+            queue.async { [weak self] in
+                guard let self else { return }
+                self.mirroredAggregation = newValue
+                self.automation.reset()
+                self.curveAutomation.reset()
+                self.lastSnapshotAt = nil
+                DispatchQueue.main.async {
+                    // 闸门已清空，「正在下发」的显示要跟着归零，否则残留上一轮的目标
+                    self.automatedRpm = nil
+                    self.curveRawRpm = nil
+                }
+            }
+        }
+    }
+
     @Published private(set) var helperStatus: HelperStatus = .checking
     @Published private(set) var limits = FanLimits(minRpm: 1000, maxRpm: 4900)
     @Published private(set) var message: String?
@@ -88,6 +115,7 @@ final class ControlStore: ObservableObject {
     private var mirroredStrategy: Strategy = .automatic
     private var mirroredLimits = FanLimits(minRpm: 1000, maxRpm: 4900)
     private var mirroredHelperReady = false
+    private var mirroredAggregation: TemperatureAggregation = .peak
 
     /// 规则来源（由 `RulesStore` 提供，线程安全方法）。
     private var rulesProvider: (() -> [FanRule])?
@@ -131,7 +159,9 @@ final class ControlStore: ObservableObject {
         self.prefs = preferences
         strategy = preferences.strategy
         fixedRpm = preferences.fixedRpm
+        temperatureAggregation = preferences.temperatureAggregation
         mirroredStrategy = strategy
+        mirroredAggregation = temperatureAggregation
         isRestoringPreferences = false
         ControlJournal.sessionStart(strategy: strategy.rawValue)
     }
@@ -321,7 +351,9 @@ final class ControlStore: ObservableObject {
             guard self.mirroredHelperReady, let controller = self.controller else { return }
 
             let now = Date()
-            let die = snapshot.readings.map(\.celsius).max()
+            // 「芯片温度」按用户选的统计口径取：最高温（全部传感器）或均温（CPU+GPU）。
+            // 曲线的插值与安全下限吃同一个值，规则引擎只把安全下限换成它。
+            let die = snapshot.controlCelsius(self.mirroredAggregation)
 
             switch self.mirroredStrategy {
             case .curve:
@@ -351,7 +383,8 @@ final class ControlStore: ObservableObject {
                     snapshot: snapshot,
                     rules: rules,
                     limits: self.mirroredLimits,
-                    now: now
+                    now: now,
+                    aggregation: self.mirroredAggregation
                 )
                 let triggered = self.automation.triggeredRuleIDs
                 let automated = self.automation.lastCommandedRpm

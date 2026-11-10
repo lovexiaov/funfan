@@ -724,16 +724,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     settings: settings,
                     control: control,
                     diagnostics: diagnostics,
-                    installer: helperInstaller
+                    installer: helperInstaller,
+                    monitor: monitor
                 )
                 .funfanTheme()
             )
         )
         let window = NSWindow(contentViewController: hosting)
         window.title = "FunFan · 设置"
-        window.styleMask = [.titled, .closable, .miniaturizable]
+        // 可缩放：设置项会越加越多（这次就多了一组「风扇调速」），
+        // 固定尺寸 + 不可滚只会在小屏上把最后一段裁掉。
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 540, height: 800))
+        window.setContentSize(NSSize(width: 540, height: 860))
         window.appearance = settings.appearance.nsAppearance
         window.center()
         window.makeKeyAndOrderFront(nil)

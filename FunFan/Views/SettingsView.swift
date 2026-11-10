@@ -13,6 +13,8 @@ struct SettingsView: View {
     @ObservedObject var control: ControlStore
     @ObservedObject var diagnostics: DiagnosticsStore
     @ObservedObject var installer: HelperInstaller
+    /// 只用来显示「现在按几度在算」，不参与控制逻辑。
+    @ObservedObject var monitor: MonitorStore
 
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var colorScheme
@@ -31,20 +33,38 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().overlay(palette.divider)
-            // 不用 ScrollView：内容高度固定且可控，
-            // 而 ScrollView 在 ImageRenderer 离屏渲染下不填充内容，设计走查会看到一片空白。
-            VStack(alignment: .leading, spacing: 14) {
-                appearanceSection
-                generalSection
-                helperSection
-                diagnosisSection
-                aboutSection
+            // 标题之外的内容整块可滚动：设置项只会越加越多，固定高度 + 不可滚
+            // 会把最下面的「免责声明」直接裁掉——那是最不该看不见的一段。
+            //
+            // 走查渲染（`FunFan --render settings --flat`）时摊平成普通 VStack：
+            // `ImageRenderer` 不渲染 `ScrollView` 的内容，否则整页拍到一片空白。
+            if flattenScroll {
+                sections
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    sections
+                    // 内容比窗口矮时也要能吸顶，否则卡片会垂直居中飘着
+                    Spacer(minLength: 0)
+                }
             }
-            .padding(16)
-            Spacer(minLength: 0)
         }
-        .frame(minWidth: 520, minHeight: 780)
+        .frame(minWidth: 520, minHeight: 560)
         .background(palette.panelFill)
+    }
+
+    @Environment(\.renderFlattensScroll) private var flattenScroll
+
+    private var sections: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            appearanceSection
+            temperatureSection
+            generalSection
+            helperSection
+            diagnosisSection
+            aboutSection
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - 头部
@@ -95,6 +115,47 @@ struct SettingsView: View {
             return "固定浅色，不再跟随系统"
         case .dark:
             return "固定深色，不再跟随系统"
+        }
+    }
+
+    // MARK: - 风扇调速
+
+    /// 调速依据温度（最高温 / 均温）。
+    ///
+    /// 放在「外观」之后、「通用」之前：它直接改变风扇转速，比登录项这类
+    /// 「装完就不再看」的开关重要得多，不该沉在通用组里。
+    /// 副标题里带上实时读数——不然用户只能凭感觉判断两种口径差多少。
+    private var temperatureSection: some View {
+        section("风扇调速") {
+            SettingRow(
+                title: "调速依据温度",
+                subtitle: temperatureSubtitle,
+                isLast: true
+            ) {
+                SegmentedPicker(
+                    options: TemperatureAggregation.allCases,
+                    title: \.settingLabel,
+                    selection: $control.temperatureAggregation
+                )
+                .frame(width: 208)
+                .help("曲线映射与安全下限都按这里的口径计算")
+            }
+        }
+    }
+
+    private var temperatureSubtitle: String {
+        let hottest = monitor.hottestCelsius.map { String(format: "%.0f℃", $0) }
+        let average = monitor.coreAverageCelsius.map { String(format: "%.0f℃", $0) }
+
+        switch control.temperatureAggregation {
+        case .peak:
+            let now = hottest.map { "当前最热 \($0)" } ?? "正在采样…"
+            return "取全部传感器中的最高温，任一探测点过热即提速。\(now)"
+        case .average:
+            let now = average.map { "当前均温 \($0)" } ?? "正在采样…"
+            // 把「安全下限也按均温算」写在明面上：这是这个选项唯一的代价，
+            // 藏起来的话，用户只会觉得「选了均温以后机器比以前热」。
+            return "取 CPU / GPU 全部探测点的均温，SSD、电池、环境不参与；安全下限同样按均温计算。\(now)"
         }
     }
 

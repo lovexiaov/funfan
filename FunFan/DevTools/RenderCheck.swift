@@ -121,9 +121,10 @@ enum RenderCheck {
                     settings: SettingsStore(),
                     control: control,
                     diagnostics: DiagnosticsStore(),
-                    installer: HelperInstaller()
+                    installer: HelperInstaller(),
+                    monitor: monitor
                 )
-                .frame(width: 540, height: 800)
+                .frame(width: 540, height: 960)
             )
         case "popover":
             content = AnyView(
@@ -171,7 +172,9 @@ enum RenderCheck {
         // 顺序要紧：`funfanTheme()` 在内侧读 `colorScheme`，`environment` 必须在外侧，
         // 否则它读到的是系统外观而不是 `--scheme` 指定的那一套。
         let base = AnyView(content.funfanTheme().environment(\.colorScheme, schemeValue()))
-        let flat = CommandLine.arguments.contains("--flat")
+        // settings 页整页是 `ScrollView`，不摊平就拍成一片空白——这页的走查价值
+        // 恰恰在「所有分组是否放得下」，所以这个 target 默认摊平。
+        let flat = (CommandLine.arguments.contains("--flat") || target == "settings")
             ? AnyView(base.environment(\.renderFlattensScroll, true))
             : base
         // 强制把焦点环画出来（ImageRenderer 不参与响应者链，本来拿不到焦点）

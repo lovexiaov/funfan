@@ -18,8 +18,10 @@ final class MonitorStore: ObservableObject {
     /// 环境温度在这台机器上到底有没有——`ambientAverage == nil` 不足以区分
     /// 「没有这个传感器」和「这一刻没采到」，UI 需要这个三态才能不说谎。
     @Published private(set) var ambientAvailability: SensorAvailability = .pending
-    /// 全部传感器中的最高温——曲线/规则用的「芯片温度」就是它（与 `RuleEngine` 一致）。
+    /// 全部传感器中的最高温——「最高温度」口径下的芯片温度（与 `RuleEngine` 一致）。
     @Published private(set) var hottestCelsius: Double?
+    /// CPU + GPU 的均温——「平均温度」口径下的芯片温度（SSD/电池/环境不参与）。
+    @Published private(set) var coreAverageCelsius: Double?
     @Published private(set) var coreGroups: [CoreGroup] = []
     @Published private(set) var battery: BatteryState = .absent
     @Published private(set) var lastSample: Date?
@@ -50,6 +52,17 @@ final class MonitorStore: ObservableObject {
 
     /// 主风扇索引。
     var primaryFan: FanState? { fans.first }
+
+    /// 当前调速口径对应的芯片温度（UI 复现「风扇到底按几度在算」）。
+    ///
+    /// 必须与 `ControlStore` 喂给引擎的值同源：两边各算一套，就会出现
+    /// 「设置页说 52℃、曲线却按 78℃ 画」这种自相矛盾的画面。
+    func controlTemperature(_ aggregation: TemperatureAggregation) -> Double? {
+        switch aggregation {
+        case .peak: return hottestCelsius
+        case .average: return coreAverageCelsius
+        }
+    }
 
     /// 拓扑来源（可注入假实现用于测试）。默认从 sysctl / IORegistry 读真实硬件。
     var topologyProvider: TopologyProviding = SystemTopologyProbe()
@@ -161,6 +174,7 @@ final class MonitorStore: ObservableObject {
             sensorCount: temperatureProvider?.sensorCount(for: .ambient)
         )
         let hottest = snapshot.readings.map(\.celsius).max()
+        let coreAverage = snapshot.controlCelsius(.average)
         let count = snapshot.readings.count
 
         // 规则评估用原始快照：在监控队列上同步回调，避免额外线程切换。
@@ -176,6 +190,7 @@ final class MonitorStore: ObservableObject {
             self.ambientAverage = ambient
             self.ambientAvailability = ambientAvailability
             self.hottestCelsius = hottest
+            self.coreAverageCelsius = coreAverage
             self.coreGroups = groups
             self.battery = battery
             self.lastSample = snapshot.timestamp
