@@ -152,8 +152,12 @@ final class UpdateStore: ObservableObject, @unchecked Sendable {
     /// Gatekeeper 那一次「仍要打开」的人工放行，也会让 helper 的签名校验失效。
     /// 换版本必须由用户走一遍「挂载 DMG → 拖进应用程序」的路径，
     /// 这也是发布手册里唯一验证过的升级方式。
+    ///
+    /// 打开的是发布页而不是 dmg 直链：数据源是 Atom 订阅，它不提供附件地址
+    /// （原因见 `UpdateChecker` 的注释）。发布页上有安装说明、校验和与全部附件，
+    /// 比一个可能 404 的拼接直链可靠。
     func openDownloadPage() {
-        guard let url = availableRelease?.downloadURL else { return }
+        guard let url = availableRelease?.pageURL else { return }
         NSWorkspace.shared.open(url)
     }
 

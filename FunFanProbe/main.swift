@@ -245,11 +245,11 @@ private func runTierComparison(smc: SMCService) {
 
 // MARK: - 更新检查探针
 
-/// 真机验证「检查更新」的完整链路：真实网络 → 真实 GitHub 列表 → 版本比较。
+/// 真机验证「检查更新」的完整链路：真实网络 → 真实 GitHub 订阅 → 版本比较。
 ///
 /// 为什么放在探针里而不是只靠单测：单测用的夹具是我按文档写的，
-/// 而 `tag_name` / `prerelease` / `browser_download_url` 这些字段到底叫什么、
-/// 草稿会不会漏出来、`/releases/latest` 是不是真的 404，只有打一次真接口才知道。
+/// 而真实 feed 里 `<title>` 与 tag 是否一致、转义的 HTML 正文长什么样、
+/// 草稿会不会漏出来，只有打一次真接口才知道（第一次查就发现标题格式不统一）。
 func runUpdateCheckProbe() {
     let arguments = CommandLine.arguments
     let overridden = arguments.firstIndex(of: "--current").flatMap { index -> String? in
@@ -264,7 +264,8 @@ func runUpdateCheckProbe() {
 
     let source = overridden != nil ? "--current" : (fromBundle != nil ? "Info.plist" : "兜底默认")
     print("[Update] 当前版本 \(current)（来源：\(source)）")
-    print("[Update] 端点 \(UpdateChecker.defaultFeedURL.absoluteString)")
+    print("[Update] 主源 \(UpdateChecker.primaryFeedURL.absoluteString)")
+    print("[Update] 备用源 \(UpdateChecker.fallbackFeedURL.absoluteString)（主源额度耗尽或连不上时才用）")
 
     let prefs = UpdatePreferences(defaults: .standard)
     print("[Update] 自动检查默认值=\(UpdatePreferences.defaultAutoCheck) 当前=\(prefs.autoCheckEnabled) "
@@ -280,7 +281,7 @@ func runUpdateCheckProbe() {
             print("[Update] 本地响应解析出 \(releases.count) 条已发布版本：")
             for info in releases.sorted(by: { $0.version < $1.version }) {
                 print("[Update]   \(info.version)  tag=\(info.tag)  pre=\(info.isPrerelease)  "
-                      + "assets=\(info.assets.count)  dmg=\(info.assets.contains { $0.name.lowercased().hasSuffix(".dmg") })")
+                      + "页面=\(info.pageURL?.absoluteString ?? "无")")
             }
             let outcome = UpdateChecker.select(
                 from: releases, current: current, skipping: prefs.skippedVersion
@@ -296,7 +297,13 @@ func runUpdateCheckProbe() {
     Task {
         let started = Date()
         do {
-            let outcome = try await UpdateChecker().check(current: current, skipping: prefs.skippedVersion)
+            let outcome = try await UpdateChecker().check(
+                current: current,
+                skipping: prefs.skippedVersion,
+                didFallBack: { failure in
+                    print("[Update] 主源不可用（\(failure)），已切换到备用源 Atom")
+                }
+            )
             describe(outcome, elapsed: Date().timeIntervalSince(started) * 1000)
         } catch let failure as UpdateFailure {
             print("[Update] 失败（分类）：\(failure)")
@@ -317,8 +324,12 @@ private func describe(_ outcome: UpdateOutcome, elapsed: Double?) {
         print("[Update] 已是最新（当前 \(version)\(timing)）")
     case .available(let info):
         print("[Update] 发现新版本 \(info.version)（tag \(info.tag)，预发布=\(info.isPrerelease ? "是" : "否")\(timing)）")
-        print("[Update] 下载链接：\(info.downloadURL?.absoluteString ?? "无")")
         print("[Update] 发布页面：\(info.pageURL?.absoluteString ?? "无")")
+        if let dmg = info.downloadURL {
+            print("[Update] dmg 直链：\(dmg.absoluteString)（主源给得，点击即下载）")
+        } else {
+            print("[Update] dmg 直链：无 —— 走的是备用源 Atom，只能打开发布页（预期行为）")
+        }
         if let published = info.publishedAt {
             print("[Update] 发布时间：\(published)")
         }

@@ -91,15 +91,9 @@ enum RenderCheck {
             version: version,
             name: "FunFan 1.0.0-alpha.8",
             isPrerelease: true,
-            publishedAt: Date(timeIntervalSince1970: 1_793_462_400),
+            publishedAt: Date(timeIntervalSince1970: 1_794_328_295),
             pageURL: URL(string: "https://github.com/lovexiaov/funfan/releases/tag/v1.0.0-alpha.8"),
-            notes: "",
-            assets: [
-                ReleaseAsset(
-                    name: "FunFan-1.0.0-alpha.8.dmg",
-                    downloadURL: URL(string: "https://example.com/FunFan-1.0.0-alpha.8.dmg")
-                )
-            ]
+            notes: ""
         )))
         return store
     }

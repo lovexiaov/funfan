@@ -430,7 +430,7 @@ struct SettingsView: View {
 
             SettingRow(
                 title: "每天自动检查一次",
-                subtitle: "启动时向 api.github.com 查一次，只发送当前版本号，不含任何设备或使用信息。关闭时只有点上面的按钮才联网。",
+                subtitle: "启动时向 GitHub 查一次发布信息，只发送当前版本号，不含任何设备或使用信息。关闭时只有点上面的按钮才联网。",
                 isLast: true
             ) {
                 FunFanToggle(isOn: $update.autoCheckEnabled, size: 24)
