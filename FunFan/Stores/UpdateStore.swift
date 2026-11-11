@@ -87,7 +87,8 @@ final class UpdateStore: ObservableObject, @unchecked Sendable {
             return "已是最新（\(version)）。"
         case .available:
             // 版本号已经在上方卡片里写了一遍，这里不再重复，只说「还能做什么」。
-            return "有新版本可用（当前 \(currentVersion.map { "\($0)" } ?? "未知")）。点上面的「下载」打开下载页。"
+            // 不写「打开下载页」：有 dmg 直链时是直接下载，没有时才打开发布页。
+            return "有新版本可用（当前 \(currentVersion.map { "\($0)" } ?? "未知")）。点上面的「下载」获取新版本。"
         case .failed(let failure):
             return failure.message
         }
