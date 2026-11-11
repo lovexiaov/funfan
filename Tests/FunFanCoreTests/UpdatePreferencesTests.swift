@@ -5,7 +5,7 @@ import XCTest
 ///
 /// 默认值是产品决策，不是随手写的：
 /// **默认关闭自动检查**。App 的免责声明写着「不收集任何数据」，而自动检查会向
-/// api.github.com 发请求（带着 IP 和本机版本号）。默认替用户联网与这句话冲突，
+/// GitHub 发请求（带着 IP 和本机版本号）。默认替用户联网与这句话冲突，
 /// 所以做成「默认手动、想自动就明示打开」。
 final class UpdatePreferencesTests: XCTestCase {
 
