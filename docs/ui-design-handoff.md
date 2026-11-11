@@ -267,3 +267,13 @@ screencapture -x /tmp/shot.png
 | 「忽略」只跳这一个版本，不是永久关掉提示 | `UpdatePreferences.skippedVersion` + `UpdateChecker.select` | 用户拒绝的是「这个版本」，不是「以后所有更新」。更新的版本出现时仍要提示，否则会长期停在旧版 |
 | 只打开下载页，不做应用内下载/自替换 | `UpdateStore.openDownloadPage` | adhoc 未公证包自替换会绕过 Gatekeeper 的人工放行，也让 helper 的签名校验失效。升级必须走「DMG → 拖进应用程序」这条验证过的路径 |
 | 新增走查开关 `--update-available` | `RenderCheck.updateStoreForRender` | 「有新版本」这个状态只在真的发了新版时出现，平时根本走查不到；用夹具把卡片摆出来才能检查 540pt 宽里长文案是否放得下、两套外观对比度是否够 |
+
+## 附录 G · 检查更新换成双数据源（2026-11-11）
+
+| 偏差 / 决策 | 位置 | 原因 |
+|---|---|---|
+| 数据源从「只用 REST 接口」改为「REST 为主 + Atom 订阅备用」，界面上无感知 | `UpdateChecker.check` | 用户报「老提示限流」。REST 未认证**按 IP** 限 60 次/小时，共享出口的人正常使用也会撞满（本机实测撞到 0）。Atom 是网页端点、无配额，但 `github.com` 连通性更差（同机实测连续 5 次 10 秒超时），所以只能当备用而不能替换 |
+| 换源只发生在 `rateLimited` / `network`，`http` / `malformed` 不换 | `UpdateFailure.warrantsFallback` | 前者是「这个源本身不可用」，换个端点就能通；后者是源真坏了，换源会把故障藏成「已是最新」，用户从此收不到更新且**毫无提示**——比报错更糟 |
+| 按钮文案仍是「下载」，但走备用源时打开的是发布页而不是 `.dmg` | `UpdateStore.openDownloadPage`、`ReleaseInfo.targetURL` | 主源有 `.dmg` 直链就用直链（少一次点击）；没有时退回发布页。不按约定拼 `FunFan-<版本>.dmg` 猜地址——命名一变就是 404 |
+| 「每天自动检查一次」副标题去掉具体域名，改为「向 GitHub 查一次发布信息」 | `SettingsView` | 现在有两个域名（`api.github.com` / `github.com`），写死一个会变成错误信息 |
+| 探针新增 `didFallBack` 回调并打印换源原因 | `FunFanProbe --update-check` | 「悄悄换源」如果不可观测，排查时只能靠猜。实测就是这样才看出主源是被限流而不是被墙 |

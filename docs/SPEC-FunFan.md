@@ -222,8 +222,18 @@ struct FanRule: Codable, Identifiable {
 ### 4.3 更新检查设计要点
 
 - **只检查，不安装**：没有任何自动下载/自替换。产物是 adhoc 签名、未公证，自替换会绕过 Gatekeeper 那一次人工放行，也会让 helper 对客户端的签名校验（`HelperSignature`）失效。升级唯一路径仍是「挂载 DMG → 拖进应用程序」，与发布手册验证过的路径一致。
-- **端点必须是 `GET /repos/{owner}/{repo}/releases`，不能用 `/releases/latest`**：后者只返回「非预发布、非草稿」的最新版；本项目所有版本都带 `-alpha`，匿名请求它直接 **404**（2026-11-11 实测），那样更新检查会永远报「找不到发布列表」。列表接口返回全部已发布项，预发布过滤由我们按「当前版本是不是预发布」判断。
-- **零第三方依赖**：不用 Sparkle。约 300 行（`SemanticVersion` + `ReleaseFeed` + `UpdateChecker`）就能覆盖「查一下有没有新版」。Sparkle 的价值在自动更新与增量下载，而这两件事本项目不做。
+- **两个数据源，主/备关系是有理由的**（2026-11-11 实测）：
+
+  | 源 | 给什么 | 代价 |
+  |---|---|---|
+  | **主**：`GET /repos/{owner}/{repo}/releases` | 全字段：`.dmg` 直链、草稿标记、`prerelease` | 未认证**按 IP** 限 60 次/小时 |
+  | **备**：`https://github.com/{owner}/{repo}/releases.atom` | 版本、发布日期、发布说明（HTML 正文） | 无配额，但**没有附件地址**；`github.com` 连通性更差 |
+
+  - **不能用 `/releases/latest`**：它只返回「非预发布、非草稿」的最新版；本项目所有版本都带 `-alpha`，匿名请求直接 **404**（实测），更新检查会永远报「找不到发布信息」。
+  - **换源规则**（`UpdateFailure.warrantsFallback`）：只在主源 `rateLimited`（额度耗尽）或 `network`（连不上）时换 Atom。`http` / `malformed` **不换**——那是源真坏了，换源会把故障藏成「已是最新」，用户从此收不到更新且毫无提示。两个源都挂时报**主源**的原因（限流才是根因）。
+  - **「干脆只用 Atom」被否掉**：同一台机器实测 `github.com` 连续 5 次 10 秒超时、`api.github.com` 1–2 秒返回 200 —— 那是把「限流」换成「连不上」。额度按 IP 计，共享出口（CGNAT / 公司网关 / 代理）的人最容易撞满 60 次，这正是用户报的问题。
+  - 换源对用户不可见，唯一差别是少了 `.dmg` 直链（退回发布页）。
+- **零第三方依赖**：不用 Sparkle。约 400 行（`SemanticVersion` + `ReleaseFeed` + `UpdateChecker`）就能覆盖「查一下有没有新版」。Sparkle 的价值在自动更新与增量下载，而这两件事本项目不做。
 - **版本比较按 semver §11**：字符串比较会把 `1.0.0-alpha.10` 判成小于 `alpha.9`（`'1' < '9'`），第 10 个预发布版永远推不出来且**不报错**。三条硬规则：数字标识符按数值比、数字 < 字母、正式版 > 同号预发布。迁就真实 tag 的宽容项见 `SemanticVersion` 文档注释（`v` 前缀、缺补丁位、前导零、`+` 构建元数据）。
 - **谁能收到什么**（`UpdateChecker.select`）：
   | 当前版本 | 可选范围 |
@@ -231,10 +241,10 @@ struct FanRule: Codable, Identifiable {
   | 预发布（`1.0.0-alpha.7`） | 全部非草稿版本，取最高 |
   | 正式版（`1.0.0`） | 只收正式版，取最高 |
   | 用户「忽略」过 `X` | 跳过 `X` 本身，更新的版本照常提示 |
-- **草稿永不推送**：匿名接口本来不返回草稿，带凭据/镜像会返回，所以解析层再挡一次（`ReleaseFeed.parse`）。
-- **失败要分类**：`network` / `http(status)` / `rateLimited(resetAt)` / `malformed`。GitHub 未认证接口按 IP 限 60 次/小时，撞上限流时「稍后再试」等于没说，必须给等待时间。
+- **草稿永不推送**：REST 匿名本不返回草稿，带凭据/镜像会返回，解析层再挡一次；Atom 结构上不含草稿。反过来，Atom 可能列出**release 已删除但 tag 仍存在**的条目（实测 `v1.0.0-alpha.7`）——它版本号更小，不影响选择，其发布页仍返回 200。
+- **失败要分类**：`network` / `http(status)` / `rateLimited(resetAt)` / `malformed`。限流只有在两个源都不可用时才会呈现给用户，且必须给等待时间（`retry-after` 优先于 `x-ratelimit-reset`），只说「稍后再试」等于没说。
 - **默认不联网**：`UpdatePreferences.defaultAutoCheck = false`。免责声明写着「不收集任何数据」，默认替用户发请求与这句话冲突；打开「每天自动检查」才按 24h 节流（`shouldAutoCheck`，时间戳落在未来时不查）在启动 3 秒后查一次。失败不写 `lastCheckedAt`——一次断网不该吃掉当天的额度。
-- **附件选择**：优先 `.dmg`；没有 dmg 就退回 release 页面，**不退回 `.zip`**（解压出的 `.app` 落在「下载」目录运行会触发 App Translocation，helper 装不上）。
+- **附件选择**（`ReleaseInfo.targetURL`）：主源优先 `.dmg` 直链；没有 dmg、或走的是备用源（Atom 无附件地址）时退回发布页。**不退回 `.zip`**：解压出的 `.app` 落在「下载」目录运行会触发 App Translocation，helper 装不上。也不用「按约定拼 dmg 文件名」——命名一变就是 404。
 
 ---
 
