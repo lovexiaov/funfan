@@ -260,20 +260,26 @@ screencapture -x /tmp/shot.png
 |---|---|---|
 | 设置页新增「更新」分组，位置在「诊断」之后、「关于」之前 | `SettingsView.updateSection` | 它有一个真会改变状态的按钮和一条会变色的提示，不是纯展示信息，不该塞进「关于」；但它与风扇行为无关，也不能插进「调速依据温度」和「特权组件」之间打断控制分组 |
 | 发现新版本时在分组内插一张 accent 色高亮卡片（下载 / 忽略此版本），而不是把状态只写在副标题里 | `SettingsView.availableUpdateCard` | 「检查更新」行右侧只有一个按钮，状态写进副标题会被挤成一长行；卡片能同时承载版本、发布日期和两个动作。用 accent 不用 attention：有新版本是好消息，不是警告 |
-| 「检查更新」行副标题就是状态：「当前 X。点右侧按钮向 GitHub 查一次」/「正在检查…」/「已是最新（X）」/ 失败原因 | `UpdateStore.statusText` | 检查更新是个需要解释的动作（会联网、可能限流）；一句话里既有当前版本又有下一步动作，用户不用去别处找 |
-| 有更新时副标题**不再重复版本号**，改说「点上面的『下载』打开下载页」 | 同上 | 版本号在同一屏出现了三次（卡片标题、卡片说明、行副标题），第一次走查就发现是噪音 |
-| 「每天自动检查一次」开关默认关，副标题明写「会向 api.github.com 查一次，只发送当前版本号」 | `UpdateStore.autoCheckEnabled`、`UpdatePreferences.defaultAutoCheck` | 免责声明写着「不收集任何数据」；默认替用户联网与这句话冲突。要自动就得让用户自己打开，并知道发了什么 |
+| 「检查更新」行副标题就是状态：「当前 X。点右侧按钮向 GitHub 查一次」/「正在检查…」/「已是最新（X）」/ 失败原因 | `UpdateStore.statusText` | 检查更新是个需要解释的动作（会联网、也可能失败）；一句话里既有当前版本又有下一步动作，用户不用去别处找 |
+| 有更新时副标题**不再重复版本号**，改说「点上面的『下载』获取新版本」 | 同上 | 版本号在同一屏出现了三次（卡片标题、卡片说明、行副标题），第一次走查就发现是噪音。不写「打开下载页」：有直链时是直接下载 |
+| 「每天自动检查一次」开关默认关，副标题明写「启动时向 GitHub 查一次发布信息，只发送当前版本号，不含任何设备或使用信息」 | `UpdateStore.autoCheckEnabled`、`UpdatePreferences.defaultAutoCheck` | 免责声明写着「不收集任何数据」；默认替用户联网与这句话冲突。要自动就得让用户自己打开，并知道发了什么。副标题不写具体域名：现在两个来源并行，写死 `api.github.com` 会变成错误信息 |
 | 面板底部加一行（不是横幅卡片）提示新版本：`↓ 有新版本 X … 下载 忽略` | `MenuBarView.updateNotice` | 面板主线是风扇状态，更新提示只是顺带一句。做成卡片会把「控制策略」挤下去——那才是用户打开面板要动的东西 |
 | 「忽略」只跳这一个版本，不是永久关掉提示 | `UpdatePreferences.skippedVersion` + `UpdateChecker.select` | 用户拒绝的是「这个版本」，不是「以后所有更新」。更新的版本出现时仍要提示，否则会长期停在旧版 |
-| 只打开下载页，不做应用内下载/自替换 | `UpdateStore.openDownloadPage` | adhoc 未公证包自替换会绕过 Gatekeeper 的人工放行，也让 helper 的签名校验失效。升级必须走「DMG → 拖进应用程序」这条验证过的路径 |
+| 只跳转，不做应用内下载/自替换；有 `.dmg` 直链就直接下载，没有才打开发布页 | `UpdateStore.openDownloadPage` → `ReleaseInfo.targetURL` | adhoc 未公证包自替换会绕过 Gatekeeper 的人工放行，也让 helper 的签名校验失效。升级必须走「DMG → 拖进应用程序」这条验证过的路径。曾误写成取 `pageURL`，直链给了也没用上 |
 | 新增走查开关 `--update-available` | `RenderCheck.updateStoreForRender` | 「有新版本」这个状态只在真的发了新版时出现，平时根本走查不到；用夹具把卡片摆出来才能检查 540pt 宽里长文案是否放得下、两套外观对比度是否够 |
 
-## 附录 G · 检查更新换成双数据源（2026-11-11）
+## 附录 G · 检查更新改成并行双源（2026-11-11 二次修订）
+
+> 第一次修订（alpha.9）是「REST 为主 + Atom 备用」。用户随后反馈「第一次检查更新就提示限流」，
+> 复核发现当时的依据「Atom 连续 5 次 10 秒超时」只是临时网络状况：同机二次实测
+> Atom **5/5 返回 200、0.92–1.34s**，比 REST 的 1.69–3.79s 更快。整节按新结论重写。
 
 | 偏差 / 决策 | 位置 | 原因 |
 |---|---|---|
-| 数据源从「只用 REST 接口」改为「REST 为主 + Atom 订阅备用」，界面上无感知 | `UpdateChecker.check` | 用户报「老提示限流」。REST 未认证**按 IP** 限 60 次/小时，共享出口的人正常使用也会撞满（本机实测撞到 0）。Atom 是网页端点、无配额，但 `github.com` 连通性更差（同机实测连续 5 次 10 秒超时），所以只能当备用而不能替换 |
-| 换源只发生在 `rateLimited` / `network`，`http` / `malformed` 不换 | `UpdateFailure.warrantsFallback` | 前者是「这个源本身不可用」，换个端点就能通；后者是源真坏了，换源会把故障藏成「已是最新」，用户从此收不到更新且**毫无提示**——比报错更糟 |
-| 按钮文案仍是「下载」，但走备用源时打开的是发布页而不是 `.dmg` | `UpdateStore.openDownloadPage`、`ReleaseInfo.targetURL` | 主源有 `.dmg` 直链就用直链（少一次点击）；没有时退回发布页。不按约定拼 `FunFan-<版本>.dmg` 猜地址——命名一变就是 404 |
-| 「每天自动检查一次」副标题去掉具体域名，改为「向 GitHub 查一次发布信息」 | `SettingsView` | 现在有两个域名（`api.github.com` / `github.com`），写死一个会变成错误信息 |
-| 探针新增 `didFallBack` 回调并打印换源原因 | `FunFanProbe --update-check` | 「悄悄换源」如果不可观测，排查时只能靠猜。实测就是这样才看出主源是被限流而不是被墙 |
+| 两个来源**并行、地位平等**：任一给出可信列表，检查就成功；都成功时以 REST 为准 | `UpdateChecker.check` | 把「按出口 IP 限 60 次/小时」的接口放上必经路径，等于让共享代理 / CGNAT / 公司网关的用户替别人承担额度耗尽。用户第一次点就看到「限流」正是这么来的 |
+| REST 的**任何**失败（限流 / 超时 / HTTP / 格式错）都不再成为用户可见的错误 | 同上 | 上一版只放行 `rateLimited` / `network`，其余直接报错——那是把「一个源坏了」误当成「检查不了」。Atom 也是 GitHub 官方源，它给的就是可信结论 |
+| 界面上唯一差别是少了 `.dmg` 直链（退回发布页），按钮文案不变 | `SettingsView`、`ReleaseInfo.targetURL` | 限流只该降级体验，不该打断任务。不按约定拼 `FunFan-<版本>.dmg` 猜地址——命名一变就是 404 |
+| 两个源都挂才报错，报**结论源 Atom** 的原因，文案不出现「限流」二字 | `UpdateFailure.message` | REST 的限流是共享出口 IP 的事，让用户去等那个窗口等于让他替别人背锅；「暂时没能取到发布信息 + 等待时间」才准确 |
+| 503 不再归类为限流；`Accept` 头按端点区分 | `UpdateChecker.rateLimitedFailure` / `liveFetcher` | 带 `retry-after` 的 503 是网关故障，不是额度耗尽；不给 REST 发以 `atom+xml` 打头的通配头，免得中间层挑错表示 |
+| 探针打印两个源各自的结果（`UpdateSourceReport`） | `FunFanProbe --update-check` | 「悄悄降级」如果不可观测，排查时只能靠猜。实测就是这样确认「REST 被限流、Atom 正常、用户照常看到新版」 |
+| 自动检查失败后 30 分钟内不重试，手动检查不受限制 | `UpdatePreferences.autoCheckRetryInterval`、`UpdateStore.Trigger` | 失败不写 `lastCheckedAt`（一次断网不该吃掉当天额度），但什么都不记就会在故障窗口里每次启动都失败一次 |
