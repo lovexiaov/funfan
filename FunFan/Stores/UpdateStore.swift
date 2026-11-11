@@ -96,16 +96,20 @@ final class UpdateStore: ObservableObject, @unchecked Sendable {
     // MARK: - 触发
 
     func checkManually() {
-        start()
+        start(trigger: .manual)
     }
 
-    /// 启动时调用。只在开启自动检查、且距上次成功检查超过 24h 时才联网。
+    /// 启动时调用。只在开启自动检查、距上次成功检查超过 24h、
+    /// 且失败退避已过期时才联网（见 `UpdatePreferences.shouldAutoCheck`）。
     func autoCheckIfDue(now: Date = Date()) {
         guard prefs.shouldAutoCheck(now: now) else { return }
-        start()
+        start(trigger: .auto)
     }
 
-    private func start() {
+    /// 手动重试不该被自动检查的退避拦住，所以两条路径要分开记失败时间。
+    private enum Trigger { case manual, auto }
+
+    private func start(trigger: Trigger) {
         guard let currentVersion else {
             phase = .failed(.malformed("当前是开发版，没有可比较的版本号"))
             return
@@ -137,6 +141,19 @@ final class UpdateStore: ObservableObject, @unchecked Sendable {
                 nextPhase = .failed(.network(error.localizedDescription))
             }
 
+            // 自动检查失败做 30 分钟退避，避免故障窗口里每次启动都重试、每次都失败。
+            // 成功就清掉，回到 24h 节流。手动点按钮完全不碰这个时间戳。
+            switch trigger {
+            case .auto:
+                if case .failed = nextPhase {
+                    prefs.lastAutoCheckFailedAt = Date()
+                } else {
+                    prefs.lastAutoCheckFailedAt = nil
+                }
+            case .manual:
+                break
+            }
+
             DispatchQueue.main.async { [weak self] in
                 self?.inFlight = false
                 self?.phase = nextPhase
@@ -153,11 +170,11 @@ final class UpdateStore: ObservableObject, @unchecked Sendable {
     /// 换版本必须由用户走一遍「挂载 DMG → 拖进应用程序」的路径，
     /// 这也是发布手册里唯一验证过的升级方式。
     ///
-    /// 打开的是发布页而不是 dmg 直链：数据源是 Atom 订阅，它不提供附件地址
-    /// （原因见 `UpdateChecker` 的注释）。发布页上有安装说明、校验和与全部附件，
-    /// 比一个可能 404 的拼接直链可靠。
+    /// 打开 `targetURL`：REST 增强源给了 `.dmg` 直链就直接下载，只有 Atom
+    /// 结论源时退回发布页（它有安装说明、校验和与全部附件）。
+    /// **不按约定拼 dmg 文件名**——命名一变就是 404。
     func openDownloadPage() {
-        guard let url = availableRelease?.pageURL else { return }
+        guard let url = availableRelease?.targetURL else { return }
         NSWorkspace.shared.open(url)
     }
 

@@ -137,7 +137,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         control.bootstrap()
 
         // 更新检查默认**不联网**（见 `UpdatePreferences`）。开了「每天自动检查」
-        // 才在启动 3 秒后查一次；距上次成功检查不足 24h 会被节流挡掉。
+        // 才在启动 3 秒后查一次；距上次成功检查不足 24h、或上次自动检查失败
+        // 后不到 30 分钟，都会被节流挡掉。
         // 延后是刻意的：首次采样与 helper 连接更该抢先，检查更新只是顺带。
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             self?.update.autoCheckIfDue()

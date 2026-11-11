@@ -96,9 +96,58 @@ final class UpdatePreferencesTests: XCTestCase {
         XCTAssertEqual(UpdatePreferences.autoCheckInterval, 24 * 60 * 60)
     }
 
+    // MARK: - 失败后的短退避
+
+    /// 两个源都不可用时，别让「每次启动顺手查一次」变成每次启动都失败一次。
+    /// 用户开着自动检查时最明显：一个网络故障窗口内反复看到同一句错误。
+    func testAutoCheckBacksOffShortlyAfterFailure() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        prefs.autoCheckEnabled = true
+        prefs.lastAutoCheckFailedAt = now.addingTimeInterval(-5 * 60)
+        XCTAssertFalse(prefs.shouldAutoCheck(now: now))
+    }
+
+    func testAutoCheckRetriesAfterBackoff() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        prefs.autoCheckEnabled = true
+        prefs.lastAutoCheckFailedAt = now.addingTimeInterval(-31 * 60)
+        XCTAssertTrue(prefs.shouldAutoCheck(now: now))
+    }
+
+    /// 成功一次后清掉退避，回到原来的 24h 节流——清退避不等于「马上再查」。
+    func testClearingFailureRestoresDailyThrottle() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        prefs.autoCheckEnabled = true
+        prefs.lastCheckedAt = now.addingTimeInterval(-2 * 3600)
+        prefs.lastAutoCheckFailedAt = now.addingTimeInterval(-5 * 60)
+        prefs.lastAutoCheckFailedAt = nil
+        XCTAssertFalse(prefs.shouldAutoCheck(now: now))
+    }
+
+    func testFutureFailureTimestampDoesNotTriggerCheck() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        prefs.autoCheckEnabled = true
+        prefs.lastAutoCheckFailedAt = now.addingTimeInterval(6 * 3600)
+        XCTAssertFalse(prefs.shouldAutoCheck(now: now))
+    }
+
+    func testFailedAtPersistsAndClears() {
+        XCTAssertNil(prefs.lastAutoCheckFailedAt)
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        prefs.lastAutoCheckFailedAt = now
+        XCTAssertEqual(prefs.lastAutoCheckFailedAt?.timeIntervalSince1970, now.timeIntervalSince1970)
+        prefs.lastAutoCheckFailedAt = nil
+        XCTAssertNil(prefs.lastAutoCheckFailedAt)
+    }
+
+    func testBackoffIntervalIsThirtyMinutes() {
+        XCTAssertEqual(UpdatePreferences.autoCheckRetryInterval, 30 * 60)
+    }
+
     func testKeysAreNamespaced() {
         XCTAssertEqual(UpdatePreferences.autoCheckKey, "FunFan.updateAutoCheck")
         XCTAssertEqual(UpdatePreferences.lastCheckedAtKey, "FunFan.updateLastCheckedAt")
+        XCTAssertEqual(UpdatePreferences.autoCheckFailedAtKey, "FunFan.updateAutoCheckFailedAt")
         XCTAssertEqual(UpdatePreferences.skippedVersionKey, "FunFan.updateSkippedVersion")
     }
 }
