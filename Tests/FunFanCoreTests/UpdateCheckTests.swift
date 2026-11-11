@@ -1,20 +1,23 @@
 import XCTest
 @testable import FunFanCore
 
-/// 更新检查：从两个数据源里挑出「该推给这个用户的那一个」。
+/// 更新检查：两个源并行取数，只要有一个给出可信结果，就能回答「有没有更新」。
 ///
-/// 数据源为什么要两个（2026-11-11 实测，同机）：
-/// - `api.github.com` 的 REST 接口字段最全（dmg 直链、草稿标记），约 1s，
-///   但未认证**按 IP** 限 60 次/小时——用户报的「老提示限流」就是它；
-/// - `github.com` 的 Atom 订阅没有配额，但连续 5 次 10 秒超时，且没有附件地址。
+/// 2026-11-11 二次实测（同机，走本地代理 `127.0.0.1:2333`）：
+/// - Atom `github.com/.../releases.atom`：**没有配额**，连续 5 次 200，0.92–1.34s；
+/// - REST `api.github.com/.../releases`：字段最全（dmg 直链），1.69–3.79s，
+///   但未认证**按出口 IP** 限 60 次/小时。共享出口（代理 / CGNAT / 公司网关）的
+///   人第一次点就可能撞上别人用光的额度。
 ///
-/// 所以主源用 REST、**额度耗尽或连不上时**才换 Atom。这里的每条断言都对应一个
-/// 真实会出错的判断，尤其是「什么时候才允许换源」——换早了会把真故障藏起来。
+/// 上一版把「Atom 连续 5 次 10 秒超时」当成依据，让有配额的 REST 成了必经路径，
+/// 于是用户第一次检查就看到「限流」。那个观测只是当时的临时网络状况，现已证伪。
+/// 现在两个源并行、地位平等：**REST 限流最多让用户少一个 dmg 直链，
+/// 绝不能变成一次失败的检查**。下面每条断言都对应一个真实会出错的判断。
 final class UpdateCheckTests: XCTestCase {
 
     // MARK: - 夹具
 
-    // REST（主源）
+    // REST（增强源：有 dmg 直链，但有配额）
 
     private func releaseJSON(
         tag: String,
@@ -46,7 +49,7 @@ final class UpdateCheckTests: XCTestCase {
         Data("[\(releases.joined(separator: ","))]".utf8)
     }
 
-    // Atom（备用源）
+    // Atom（结论源：无配额）
 
     private func escape(_ raw: String) -> String {
         raw
@@ -104,7 +107,8 @@ final class UpdateCheckTests: XCTestCase {
         )
     }
 
-    /// 按 URL 分发：主源给 `rest`，备用源给 `atom`。默认两个源都是「没数据」。
+    /// 按 URL 分发：REST 给 `rest`，Atom 给 `atom`。
+    /// 未指定的源默认 404 —— 需要「两个源都挂」的测试会显式给全，避免靠默认值猜。
     private func checker(rest: UpdateHTTPResponse? = nil, atom: UpdateHTTPResponse? = nil) -> UpdateChecker {
         UpdateChecker(fetcher: { url in
             let fallback: UpdateHTTPResponse = .init(statusCode: 404, body: Data())
@@ -118,24 +122,24 @@ final class UpdateCheckTests: XCTestCase {
 
     // MARK: - 端点选择
 
-    /// 主源是 REST 的**发布列表**，不是 `releases/latest`。
+    /// REST 用**发布列表**，不是 `releases/latest`。
     ///
     /// `latest` 只返回「非预发布、非草稿」的最新版：本项目所有版本都带 `-alpha`，
     /// 匿名请求它得到 404，更新检查会永远报「找不到发布信息」。这个坑实测过。
-    func testPrimaryFeedIsReleaseListNotLatest() {
-        let url = UpdateChecker.primaryFeedURL.absoluteString
+    func testRESTFeedIsReleaseListNotLatest() {
+        let url = UpdateChecker.restFeedURL.absoluteString
         XCTAssertEqual(url, "https://api.github.com/repos/lovexiaov/funfan/releases?per_page=20")
         XCTAssertFalse(url.contains("/latest"))
     }
 
-    func testFallbackFeedIsAtomSubscription() {
+    func testAtomFeedIsSubscription() {
         XCTAssertEqual(
-            UpdateChecker.fallbackFeedURL.absoluteString,
+            UpdateChecker.atomFeedURL.absoluteString,
             "https://github.com/lovexiaov/funfan/releases.atom"
         )
     }
 
-    // MARK: - 选择逻辑（走主源）
+    // MARK: - 选择逻辑（两个源都成功时以 REST 为准）
 
     func testUpToDateWhenNoNewerRelease() async throws {
         let c = checker(rest: response(jsonFeed(
@@ -228,10 +232,125 @@ final class UpdateCheckTests: XCTestCase {
         XCTAssertEqual(info.version, v("1.0.0-alpha.8"))
     }
 
+    // MARK: - 两个源的协作（本次修复的核心）
+
+    /// **用户报的问题**：出口 IP 额度被别人用光，第一次点检查就看到「限流」。
+    /// 现在 REST 限流只能让结果少一个 dmg 直链，Atom 照样给出结论。
+    func testQuotaExhaustionNeverReachesUserWhenAtomWorks() async throws {
+        let c = checker(
+            rest: quotaExhausted,
+            atom: response(atomFeed(entry(tag: "v1.0.0-alpha.9")))
+        )
+        var captured: UpdateSourceReport?
+        let outcome = try await c.check(current: v("1.0.0-alpha.8"), report: { captured = $0 })
+        guard case .available(let info) = outcome else {
+            return XCTFail("额度耗尽时也应照常看到 alpha.9，实际：\(outcome)")
+        }
+        XCTAssertEqual(info.version, v("1.0.0-alpha.9"))
+        // 「悄悄降级」必须可观测，否则排查时只能靠猜。
+        guard case .failure(let restFailure) = captured?.rest else {
+            return XCTFail("诊断里应记下 REST 的失败：\(String(describing: captured))")
+        }
+        guard case .rateLimited = restFailure else {
+            return XCTFail("REST 的失败应归类为限流，实际：\(restFailure)")
+        }
+        guard case .success(let atomCount) = captured?.atom else {
+            return XCTFail("诊断里应记下 Atom 成功：\(String(describing: captured))")
+        }
+        XCTAssertEqual(atomCount, 1)
+    }
+
+    /// REST 的失败**任何一类**都不该让用户看到错误：只要 Atom 通，就有可信结论。
+    /// 上一版只放行 `rateLimited` / `network`，`http` / `malformed` 会直接报错——
+    /// 那是把「一个源坏了」误当成「检查不了」。
+    func testAnyRESTFailureIsAbsorbedWhenAtomSucceeds() async throws {
+        let failures: [UpdateHTTPResponse] = [
+            quotaExhausted,
+            response(Data("boom".utf8), status: 500),
+            response(Data(#"{"message":"Not Found"}"#.utf8)),
+            response(Data("blocked".utf8), status: 403, headers: ["retry-after": "60"]),
+        ]
+        for failure in failures {
+            let c = checker(rest: failure, atom: response(atomFeed(entry(tag: "v1.0.0-alpha.9"))))
+            let outcome = try await c.check(current: v("1.0.0-alpha.8"))
+            guard case .available(let info) = outcome else {
+                return XCTFail("REST 失败时应由 Atom 给出结论，实际：\(outcome)")
+            }
+            XCTAssertEqual(info.version, v("1.0.0-alpha.9"))
+            XCTAssertNil(info.downloadURL, "REST 没成功就不该有直链")
+        }
+    }
+
+    /// 反过来也成立：Atom 被拦（超时 / 代理登录页）时，REST 仍能给出结论。
+    func testAtomFailureFallsBackToREST() async throws {
+        let c = checker(
+            rest: response(jsonFeed(releaseJSON(tag: "v1.0.0-alpha.9"))),
+            atom: response(Data("<html>blocked</html>".utf8))
+        )
+        let outcome = try await c.check(current: v("1.0.0-alpha.8"))
+        guard case .available(let info) = outcome else {
+            return XCTFail("Atom 挂了应由 REST 给出结论，实际：\(outcome)")
+        }
+        XCTAssertEqual(info.version, v("1.0.0-alpha.9"))
+        XCTAssertEqual(info.targetURL?.absoluteString, "https://example.com/a.dmg")
+    }
+
+    /// 两个源都成功时以 REST 为准：字段全、无 ghost 条目、有直链。
+    func testRESTResultWinsWhenBothSourcesSucceed() async throws {
+        let c = checker(
+            rest: response(jsonFeed(releaseJSON(tag: "v1.0.0-alpha.9"))),
+            atom: response(atomFeed(entry(tag: "v1.0.0-alpha.8")))
+        )
+        let outcome = try await c.check(current: v("1.0.0-alpha.8"))
+        guard case .available(let info) = outcome else {
+            return XCTFail("应采用 REST 的 alpha.9，实际：\(outcome)")
+        }
+        XCTAssertEqual(info.version, v("1.0.0-alpha.9"))
+        XCTAssertEqual(info.targetURL?.absoluteString, "https://example.com/a.dmg")
+    }
+
+    /// 两个源都挂才报错，且报**结论源（Atom）**的原因。
+    /// REST 的限流是共享出口 IP 的事，让用户去等那个窗口没有意义。
+    func testBothSourcesFailReportsAtomFailureNotQuota() async throws {
+        let c = checker(rest: quotaExhausted, atom: response(Data("<html>".utf8), status: 500))
+        do {
+            _ = try await c.check(current: v("1.0.0-alpha.7"))
+            XCTFail("两个源都挂应当报错")
+        } catch let failure as UpdateFailure {
+            XCTAssertEqual(failure, .http(status: 500))
+        }
+    }
+
+    /// Atom 返回的是代理登录页而不是订阅：绝不能当成「已是最新」。
+    func testNonAtomBodyIsNeverHiddenAsUpToDate() async throws {
+        let c = checker(rest: quotaExhausted, atom: response(Data("<html>blocked</html>".utf8)))
+        do {
+            _ = try await c.check(current: v("1.0.0-alpha.7"))
+            XCTFail("两个源都不可用应当报错")
+        } catch let failure as UpdateFailure {
+            guard case .malformed = failure else {
+                return XCTFail("应当是 malformed，实际：\(failure)")
+            }
+        }
+    }
+
+    /// REST 格式坏了但 Atom 正常：不该报错，Atom 就是可信结论。
+    func testRESTMalformedBodyDoesNotBreakCheck() async throws {
+        let c = checker(
+            rest: response(Data(#"{"message":"Not Found"}"#.utf8)),
+            atom: response(atomFeed(entry(tag: "v1.0.0-alpha.9")))
+        )
+        let outcome = try await c.check(current: v("1.0.0-alpha.8"))
+        guard case .available(let info) = outcome else {
+            return XCTFail("应当用 Atom 的结果，实际：\(outcome)")
+        }
+        XCTAssertEqual(info.version, v("1.0.0-alpha.9"))
+    }
+
     // MARK: - 下载目标
 
-    /// 主源有 `.dmg` 就用直链：少一次点击。
-    func testPrefersDMGAssetFromPrimarySource() async throws {
+    /// 有 `.dmg` 就用直链：少一次点击。
+    func testPrefersDMGAssetFromRESTSource() async throws {
         let c = checker(rest: response(jsonFeed(
             releaseJSON(tag: "v1.0.0-alpha.7", assets: [
                 ("FunFan-1.0.0-alpha.7.zip", "https://example.com/a.zip"),
@@ -244,9 +363,9 @@ final class UpdateCheckTests: XCTestCase {
         XCTAssertEqual(info.targetURL?.absoluteString, "https://example.com/a.dmg")
     }
 
-    /// 备用源没有附件地址，只能退回发布页——**绝不能去拼 dmg 文件名猜 URL**，
+    /// Atom 没有附件地址，只能退回发布页——**绝不能去拼 dmg 文件名猜 URL**，
     /// 猜错就是 404。
-    func testFallbackSourceLinksToReleasePage() async throws {
+    func testAtomSourceLinksToReleasePage() async throws {
         let c = checker(rest: quotaExhausted, atom: response(atomFeed(entry(tag: "v1.0.0-alpha.9"))))
         let outcome = try await c.check(current: v("1.0.0-alpha.8"))
         guard case .available(let info) = outcome else { return XCTFail("应当有新版本") }
@@ -255,65 +374,6 @@ final class UpdateCheckTests: XCTestCase {
             info.targetURL?.absoluteString,
             "https://github.com/lovexiaov/funfan/releases/tag/v1.0.0-alpha.9"
         )
-    }
-
-    // MARK: - 换源规则
-
-    /// 核心修复：额度耗尽时换 Atom，用户照样能看到更新，而不是一句「限流了」。
-    func testFallsBackToAtomWhenQuotaIsExhausted() async throws {
-        let c = checker(rest: quotaExhausted, atom: response(atomFeed(
-            entry(tag: "v1.0.0-alpha.7"),
-            entry(tag: "v1.0.0-alpha.8")
-        )))
-        let outcome = try await c.check(current: v("1.0.0-alpha.7"))
-        guard case .available(let info) = outcome else {
-            return XCTFail("额度耗尽时应换备用源并看到 alpha.8，实际：\(outcome)")
-        }
-        XCTAssertEqual(info.version, v("1.0.0-alpha.8"))
-    }
-
-    /// 主源连不上时也换：两个域名路由不同，一个被拦不代表另一个不行。
-    func testFallsBackWhenPrimaryIsUnreachable() async throws {
-        let c = UpdateChecker(fetcher: { url in
-            if url.absoluteString.contains(".atom") {
-                return self.response(self.atomFeed(self.entry(tag: "v1.0.0-alpha.8")))
-            }
-            throw URLError(.cannotFindHost)
-        })
-        let outcome = try await c.check(current: v("1.0.0-alpha.7"))
-        guard case .available(let info) = outcome else {
-            return XCTFail("主源连不上时应换备用源，实际：\(outcome)")
-        }
-        XCTAssertEqual(info.version, v("1.0.0-alpha.8"))
-    }
-
-    /// 但**源自己出错时不换**：换源会把「主源坏了」藏成「已是最新」，
-    /// 用户从此收不到更新且毫无提示。宁可报错。
-    func testDoesNotFallBackOnServerError() async throws {
-        let c = checker(
-            rest: response(Data("boom".utf8), status: 500),
-            atom: response(atomFeed(entry(tag: "v1.0.0-alpha.9")))
-        )
-        do {
-            _ = try await c.check(current: v("1.0.0-alpha.7"))
-            XCTFail("主源 500 应当直接报错，不能悄悄用备用源")
-        } catch let failure as UpdateFailure {
-            XCTAssertEqual(failure, .http(status: 500))
-        }
-    }
-
-    /// 两个源都挂时，报**主源**的原因（限流才是根因）。把「连不上备用源」
-    /// 报给用户只会让他去查网络。
-    func testReportsPrimaryFailureWhenBothSourcesFail() async throws {
-        let c = checker(rest: quotaExhausted, atom: response(Data("<html>".utf8), status: 500))
-        do {
-            _ = try await c.check(current: v("1.0.0-alpha.7"))
-            XCTFail("两个源都挂应当报错")
-        } catch let failure as UpdateFailure {
-            guard case .rateLimited = failure else {
-                return XCTFail("应当报主源的限流，实际：\(failure)")
-            }
-        }
     }
 
     // MARK: - Atom 解析
@@ -396,33 +456,7 @@ final class UpdateCheckTests: XCTestCase {
 
     // MARK: - 宽容解析与失败分类
 
-    /// 主源返回的不是数组（错误 JSON）要报错，不能当成「没有新版本」。
-    func testMalformedPrimaryBodyIsReported() async throws {
-        let c = checker(rest: response(Data(#"{"message":"Not Found"}"#.utf8)))
-        do {
-            _ = try await c.check(current: v("1.0.0-alpha.7"))
-            XCTFail("非数组应当报错")
-        } catch let failure as UpdateFailure {
-            guard case .malformed = failure else {
-                return XCTFail("应当是 malformed，实际：\(failure)")
-            }
-        }
-    }
-
-    /// 备用源返回的不是 feed（代理登录页等）同样不能被当成「已是最新」。
-    func testNonAtomFallbackBodyIsReportedAsPrimaryFailure() async throws {
-        let c = checker(rest: quotaExhausted, atom: response(Data("<html>blocked</html>".utf8)))
-        do {
-            _ = try await c.check(current: v("1.0.0-alpha.7"))
-            XCTFail("两个源都不可用应当报错")
-        } catch let failure as UpdateFailure {
-            guard case .rateLimited = failure else {
-                return XCTFail("应当是主源的 rateLimited，实际：\(failure)")
-            }
-        }
-    }
-
-    func testEmptyPrimaryListIsUpToDate() async throws {
+    func testEmptyRESTListIsUpToDate() async throws {
         let c = checker(rest: response(Data("[]".utf8)))
         let outcome = try await c.check(current: v("1.0.0-alpha.7"))
         XCTAssertEqual(outcome, .upToDate(current: v("1.0.0-alpha.7")))
@@ -435,14 +469,15 @@ final class UpdateCheckTests: XCTestCase {
         XCTAssertEqual(outcome, .upToDate(current: v("1.0.0-alpha.7")))
     }
 
-    /// 限流要说清「等多久」，否则用户只会反复点、反复失败。
+    /// 两个源都被限流时仍要给出等待时间，不能只说「稍后再试」。
     func testRateLimitIsReportedWithResetDate() async throws {
         let reset = 1_800_000_000
-        let c = checker(rest: response(
+        let limited = response(
             Data("slow down".utf8),
             status: 429,
             headers: ["x-ratelimit-remaining": "0", "x-ratelimit-reset": "\(reset)"]
-        ))
+        )
+        let c = checker(rest: limited, atom: limited)
         do {
             _ = try await c.check(current: v("1.0.0-alpha.7"))
             XCTFail("应当报限流")
@@ -454,8 +489,24 @@ final class UpdateCheckTests: XCTestCase {
         }
     }
 
+    /// 503 是「服务/网关暂时不可用」，不是 GitHub 的额度耗尽。
+    /// 带 `retry-after` 也不能误判成限流，否则用户会去等一个不存在的额度窗口。
+    func testServiceUnavailableIsNotMisclassifiedAsQuota() async throws {
+        let unavailable = response(Data("upstream error".utf8), status: 503, headers: ["retry-after": "30"])
+        let c = checker(rest: unavailable, atom: unavailable)
+        do {
+            _ = try await c.check(current: v("1.0.0-alpha.7"))
+            XCTFail("应当报 HTTP 错误")
+        } catch let failure as UpdateFailure {
+            XCTAssertEqual(failure, .http(status: 503))
+        }
+    }
+
     func testHTTPErrorIsReportedWithStatus() async throws {
-        let c = checker(rest: response(Data("oops".utf8), status: 500))
+        let c = checker(
+            rest: response(Data("oops".utf8), status: 500),
+            atom: response(Data("oops".utf8), status: 500)
+        )
         do {
             _ = try await c.check(current: v("1.0.0-alpha.7"))
             XCTFail("应当报 HTTP 错误")

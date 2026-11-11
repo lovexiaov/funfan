@@ -264,8 +264,9 @@ func runUpdateCheckProbe() {
 
     let source = overridden != nil ? "--current" : (fromBundle != nil ? "Info.plist" : "兜底默认")
     print("[Update] 当前版本 \(current)（来源：\(source)）")
-    print("[Update] 主源 \(UpdateChecker.primaryFeedURL.absoluteString)")
-    print("[Update] 备用源 \(UpdateChecker.fallbackFeedURL.absoluteString)（主源额度耗尽或连不上时才用）")
+    print("[Update] 结论源 \(UpdateChecker.atomFeedURL.absoluteString)（无配额）")
+    print("[Update] 增强源 \(UpdateChecker.restFeedURL.absoluteString)（有 dmg 直链，但按出口 IP 限 60 次/小时）")
+    print("[Update] 两个源并行：任一给出可信列表，这次检查就成功；REST 限流只影响有没有直链")
 
     let prefs = UpdatePreferences(defaults: .standard)
     print("[Update] 自动检查默认值=\(UpdatePreferences.defaultAutoCheck) 当前=\(prefs.autoCheckEnabled) "
@@ -300,8 +301,9 @@ func runUpdateCheckProbe() {
             let outcome = try await UpdateChecker().check(
                 current: current,
                 skipping: prefs.skippedVersion,
-                didFallBack: { failure in
-                    print("[Update] 主源不可用（\(failure)），已切换到备用源 Atom")
+                report: { report in
+                    print("[Update] 结论源 Atom：\(sourceSummary(report.atom))")
+                    print("[Update] 增强源 REST：\(sourceSummary(report.rest))")
                 }
             )
             describe(outcome, elapsed: Date().timeIntervalSince(started) * 1000)
@@ -316,6 +318,14 @@ func runUpdateCheckProbe() {
     semaphore.wait()
 }
 
+/// 两个源各自的取数结果。限流被「吞掉」时全靠这一行才看得出来。
+private func sourceSummary(_ result: Result<Int, UpdateFailure>) -> String {
+    switch result {
+    case .success(let count): return "成功，\(count) 条发布"
+    case .failure(let failure): return "失败（分类 \(failure)）"
+    }
+}
+
 /// 把选择结果打印成人话。联网与本地响应两条路径共用，避免两边说法不一致。
 private func describe(_ outcome: UpdateOutcome, elapsed: Double?) {
     let timing = elapsed.map { String(format: "，耗时 %.0f ms", $0) } ?? ""
@@ -326,10 +336,11 @@ private func describe(_ outcome: UpdateOutcome, elapsed: Double?) {
         print("[Update] 发现新版本 \(info.version)（tag \(info.tag)，预发布=\(info.isPrerelease ? "是" : "否")\(timing)）")
         print("[Update] 发布页面：\(info.pageURL?.absoluteString ?? "无")")
         if let dmg = info.downloadURL {
-            print("[Update] dmg 直链：\(dmg.absoluteString)（主源给得，点击即下载）")
+            print("[Update] dmg 直链：\(dmg.absoluteString)（REST 给得，点击即下载）")
         } else {
-            print("[Update] dmg 直链：无 —— 走的是备用源 Atom，只能打开发布页（预期行为）")
+            print("[Update] dmg 直链：无 —— 用的是 Atom 结论源，下载退回发布页（预期行为）")
         }
+        print("[Update] 点「下载」实际打开：\(info.targetURL?.absoluteString ?? "无")")
         if let published = info.publishedAt {
             print("[Update] 发布时间：\(published)")
         }

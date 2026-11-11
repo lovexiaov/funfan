@@ -10,7 +10,7 @@ public struct ReleaseInfo: Equatable {
     /// 发布页地址。两个数据源都提供，永远可用。
     public let pageURL: URL?
     /// `.dmg` 直链。**只有 REST 接口给得了**——Atom 订阅不带附件地址，
-    /// 备用源下为 nil，界面退回发布页（见 `targetURL`）。
+    /// 用 Atom 的结论时为 nil，界面退回发布页（见 `targetURL`）。
     public let downloadURL: URL?
     /// 发布说明（Atom 源已从 HTML 去掉标签）。
     public let notes: String
@@ -52,15 +52,15 @@ public struct ReleaseInfo: Equatable {
 
 /// 发布数据的解析。两个数据源各一份，产出一致的 `[ReleaseInfo]`。
 ///
-/// **为什么是两个源**（2026-11-11 实测）：
-/// - REST `api.github.com/.../releases`：字段最全（能拿到 dmg 直链、草稿标记），
-///   但未认证时**按 IP** 限 60 次/小时。共享出口（CGNAT / 公司网关 / 代理）
-///   的用户会在完全正常的使用下被告知「限流了」——这正是用户报的问题。
-/// - Atom `github.com/.../releases.atom`：网页端点，没有这个配额，但拿不到附件地址，
-///   而且 `github.com` 在部分网络里比 `api.github.com` 更难连通。
+/// **为什么是两个源**（2026-11-11 二次实测）：
+/// - Atom `github.com/.../releases.atom`：网页端点，**没有 REST 那套按出口 IP 计的
+///   60 次/小时配额**，连续 5 次 200、0.92–1.34s；但拿不到附件地址。
+/// - REST `api.github.com/.../releases`：字段最全（dmg 直链、草稿标记），
+///   但未认证按 IP 限额，1.69–3.79s。共享出口（代理 / CGNAT / 公司网关）的
+///   用户第一次点也可能撞上别人耗光的额度。
 ///
-/// 所以：REST 为主，**额度耗尽或连不上**时才换 Atom（见 `UpdateChecker.check`）。
-/// 反过来「只用 Atom」会把「限流」换成「连不上」，不是改进。
+/// 两个源**并行且地位平等**，任一给出可信列表就能下结论（见 `UpdateChecker.check`）。
+/// REST 限流只影响「有没有 dmg 直链」，不该变成一次失败的检查。
 public enum ReleaseFeed {
 
     /// 按内容自动识别格式（`<` 开头当 Atom，其余当 JSON）。给探针的 `--feed` 用。
@@ -69,7 +69,7 @@ public enum ReleaseFeed {
         return head.first == UInt8(ascii: "<") ? try decodeAtom(data) : try decodeJSON(data)
     }
 
-    // MARK: - Atom（备用源）
+    // MARK: - Atom（结论源：无配额）
 
     public static func decodeAtom(_ data: Data) throws -> [ReleaseInfo] {
         let delegate = AtomReleaseParser()
@@ -126,7 +126,7 @@ public enum ReleaseFeed {
         return nil
     }
 
-    // MARK: - REST（主源）
+    // MARK: - REST（增强源：直链 / 草稿标记）
 
     /// 刻意**不用 Codable**：一个条目里某个字段类型不对（GitHub 偶尔会这么干，
     /// 或者中间层塞了别的东西），Codable 会让整次解码失败——用户看到「检查更新失败」，
